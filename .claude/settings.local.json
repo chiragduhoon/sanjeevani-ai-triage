@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(pip install *)",
+      "Bash(npm install *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8000/triage -H 'Content-Type: application/json' -d '{\"transcript\": \"I have chest pain\"}')",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(echo \"---EXIT:$?---\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8000/api/prescriptions/TEST-001)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8000/api/prescriptions/TEST-001 -H \"Content-Type: application/json\" -d '{\"medicine_name\":\"Test\",\"dosage\":\"5mg\",\"frequency\":\"once\"}')",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py: SYNTAX OK'\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(powershell.exe -NoProfile -Command \"Stop-Process -Id 125176,89024 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800; 'killed'\")",
+      "Bash(uvicorn main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(curl -s -X POST http://localhost:8000/api/prescriptions/CHIRAG-001 -H \"Content-Type: application/json\" -d '{\"medicine_name\":\"Amoxicillin\",\"dosage\":\"500mg\",\"frequency\":\"Twice daily\",\"duration\":\"7 days\"}')",
+      "Bash(curl -s http://localhost:8000/api/prescriptions/CHIRAG-001)",
+      "Bash(curl -s -o /dev/null -w \"PATCH status: HTTP %{http_code}\\\\n\" -X PATCH http://localhost:8000/api/queue/CHIRAG-001/status -H \"Content-Type: application/json\" -d '{\"status\":\"DISCHARGED\"}')",
+      "Bash(curl -s -o /dev/null -w \"DELETE queue:  HTTP %{http_code}\\\\n\" -X DELETE http://localhost:8000/api/queue/CHIRAG-001)",
+      "Bash(curl -s http://localhost:8000/api/prescriptions/CHIRAG-006)",
+      "Bash(powershell.exe -NoProfile -Command \"taskkill /PID 127400 /T /F\")",
+      "Bash(powershell.exe -NoProfile -Command ' *)",
+      "Bash(powershell.exe -NoProfile -Command \"Stop-Process -Id 137692 -Force; Start-Sleep -Milliseconds 800; 'killed orphan'\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/prescriptions/DEMO-001 -H \"Content-Type: application/json\" -d '{\"medicine_name\":\"Paracetamol\",\"dosage\":\"650mg\",\"frequency\":\"Thrice daily\",\"duration\":\"5 days\"}')",
+      "Bash(curl -s http://localhost:8000/api/prescriptions/DEMO-001)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/queue/DEMO-001 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8000/health)",
+      "Bash(curl -s -X POST http://localhost:8000/triage -H \"Content-Type: application/json\" -d '{\"transcript\":\"I have a headache\",\"patientId\":\"OKTEST-1\",\"patientName\":\"Test\"}')",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:5174/triage -H \"Content-Type: application/json\" -d '{\"transcript\":\"chest pain\",\"patientId\":\"OKTEST-2\"}')",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-1 -o /dev/null)",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-2 -o /dev/null)"
+    ]
+  }
+}
