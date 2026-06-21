@@ -1,0 +1,1 @@
+{"ICU": {"total": 5, "occupied": []}, "EMERGENCY": {"total": 8, "occupied": [{"bed": 1, "patient": "PATIENT-007", "since": "21 Jun 2026 15:26"}]}, "GENERAL": {"total": 15, "occupied": []}, "PRIVATE": {"total": 4, "occupied": []}}

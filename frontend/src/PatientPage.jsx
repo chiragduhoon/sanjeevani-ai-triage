@@ -23,6 +23,10 @@ export default function PatientPage() {
   const [patientName, setPatientName] = useState('')
   const [lookupPatientId, setLookupPatientId] = useState('')
   const [returnPatient, setReturnPatient] = useState(null)
+  const [uiLang, setUiLang] = useState(() => localStorage.getItem('sanjeevani_lang') || 'en')
+
+  const switchLang = (l) => { setUiLang(l); localStorage.setItem('sanjeevani_lang', l) }
+  const isHindi = uiLang === 'hi'
 
   // Ref so WS handler always has latest patientId without stale closure
   const savedPatientIdRef = useRef(null)
@@ -101,7 +105,7 @@ export default function PatientPage() {
       const res = await fetch('/triage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, patientId, patientName: patientName.trim() }),
+        body: JSON.stringify({ transcript, patientId, patientName: patientName.trim(), lang: uiLang }),
       })
       const data = await res.json()
       const resultData = { ...data, transcript, time: new Date().toLocaleTimeString() }
@@ -139,16 +143,78 @@ export default function PatientPage() {
 
   return (
     <div style={{
-      maxWidth: 680, margin: '0 auto', padding: '32px 16px 64px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      maxWidth: 720,
+      margin: '0 auto',
+      padding: '20px',
+      paddingTop: '40px',
+      paddingBottom: '80px',
       color: '#1F2937',
+      minHeight: '100vh',
+      boxSizing: 'border-box',
+      width: '100%',
     }}>
-      {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#111827', margin: 0, letterSpacing: '-0.02em' }}>
-          Sanjeevani
-        </h1>
-        <p style={{ fontSize: 14, color: '#6B7280', margin: '4px 0 0' }}>Patient Assessment</p>
+      {/* Header with gradient */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 40,
+        padding: '32px 0',
+        borderBottom: '2px solid rgba(15, 118, 110, 0.1)',
+      }}>
+        <div>
+          <h1 style={{
+            fontSize: 32,
+            fontWeight: 800,
+            background: 'linear-gradient(135deg, #0F766E 0%, #14B8A6 100%)',
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            margin: 0,
+            letterSpacing: '-0.02em',
+          }}>
+            Sanjeevani
+          </h1>
+          <p style={{
+            fontSize: 14,
+            color: '#6B7280',
+            margin: '8px 0 0',
+            fontWeight: 500,
+          }}>
+            {isHindi ? 'स्वास्थ्य मूल्यांकन' : 'Healthcare Assessment'}
+          </p>
+        </div>
+
+        {/* Language toggle */}
+        <div style={{
+          display: 'flex',
+          gap: 4,
+          padding: 4,
+          background: s.colors.gray[100],
+          borderRadius: 8,
+          flexShrink: 0,
+        }}>
+          {[['en', 'English'], ['hi', 'हिंदी']].map(([code, label]) => (
+            <button
+              key={code}
+              onClick={() => switchLang(code)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                background: uiLang === code ? 'white' : 'transparent',
+                color: uiLang === code ? s.colors.primary : s.colors.gray[600],
+                boxShadow: uiLang === code ? '0 2px 4px rgba(0, 0, 0, 0.05)' : 'none',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {!result && !returnPatient ? (
@@ -156,19 +222,19 @@ export default function PatientPage() {
           {/* Returning Patient Section */}
           <div style={{
             ...s.card,
-            background: '#F0F9FF',
-            borderLeft: '4px solid #0284C7',
-            marginBottom: 16,
+            background: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
+            borderLeft: `4px solid ${s.colors.secondary}`,
+            marginBottom: 20,
           }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#0C2340', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-              Returning patient?
+              {isHindi ? 'पहले आ चुके हैं?' : 'Returning patient?'}
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 value={lookupPatientId}
                 onChange={(e) => setLookupPatientId(e.target.value)}
-                placeholder="Enter your Patient ID (e.g., CHIRAG-001)"
+                placeholder={isHindi ? 'अपना Patient ID दर्ज करें (जैसे CHIRAG-001)' : 'Enter your Patient ID (e.g., CHIRAG-001)'}
                 style={{
                   flex: 1, padding: '10px 12px', borderRadius: 6,
                   border: '1px solid #BFE7F7', fontSize: 12, boxSizing: 'border-box',
@@ -220,13 +286,13 @@ export default function PatientPage() {
           {/* Patient Name Input */}
           <div style={s.card}>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-              Your name
+              {isHindi ? 'आपका नाम' : 'Your name'}
             </p>
             <input
               type="text"
               value={patientName}
               onChange={(e) => setPatientName(e.target.value)}
-              placeholder="Enter your name (e.g., Chirag)"
+              placeholder={isHindi ? 'अपना नाम दर्ज करें (जैसे Chirag)' : 'Enter your name (e.g., Chirag)'}
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 6,
                 border: patientName.trim() ? '1px solid #2563EB' : '1px solid #D1D5DB',
@@ -245,9 +311,9 @@ export default function PatientPage() {
           {/* Voice input card */}
           <div style={s.card}>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 16 }}>
-              Describe your symptoms
+              {isHindi ? 'अपने लक्षण बताएं' : 'Describe your symptoms'}
             </p>
-            <VoiceInput onTranscriptReady={handleTranscript} />
+            <VoiceInput onTranscriptReady={handleTranscript} lang={uiLang} />
           </div>
 
           {loading && (
@@ -256,7 +322,7 @@ export default function PatientPage() {
                 width: 20, height: 20, border: '2.5px solid #E5E7EB', borderTopColor: '#2563EB',
                 borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0,
               }} />
-              <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>Analyzing symptoms with AI...</p>
+              <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>{isHindi ? 'AI से लक्षणों का विश्लेषण हो रहा है...' : 'Analyzing symptoms with AI...'}</p>
             </div>
           )}
         </>
@@ -332,9 +398,19 @@ export default function PatientPage() {
               {/* Patient ID Display */}
               {savedPatientId && (
                 <div style={{
-                  ...s.card, background: '#ECFDF5', borderLeft: '4px solid #059669', marginBottom: 16,
+                  ...s.card,
+                  background: 'linear-gradient(135deg, #ECFDF5 0%, #DCFCE7 100%)',
+                  borderLeft: `4px solid ${s.colors.success}`,
+                  marginBottom: 20,
                 }}>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: '#065F46', margin: '0 0 4px', textTransform: 'uppercase' }}>
+                  <p style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#065F46',
+                    margin: '0 0 8px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
                     Your Patient ID
                   </p>
                   {patientName && (
@@ -361,7 +437,9 @@ export default function PatientPage() {
                     </button>
                   </div>
                   <p style={{ fontSize: 11, color: '#065F46', margin: 0, opacity: 0.8 }}>
-                    Save this ID — use it to check prescriptions and history next visit.
+                    {isHindi
+                      ? 'यह ID सेव करें — अगली बार प्रिस्क्रिप्शन और इतिहास देखने के लिए।'
+                      : 'Save this ID — use it to check prescriptions and history next visit.'}
                   </p>
                 </div>
               )}
@@ -370,8 +448,14 @@ export default function PatientPage() {
 
               {/* Tab Navigation */}
               <div style={{
-                display: 'flex', gap: 8, overflowX: 'auto', marginTop: 16, paddingBottom: 8,
-                borderBottom: '1px solid #E5E7EB',
+                display: 'flex',
+                gap: 6,
+                overflowX: 'auto',
+                marginTop: 24,
+                paddingBottom: 12,
+                borderBottom: `2px solid ${s.colors.gray[200]}`,
+                scrollBehavior: 'smooth',
+                WebkitOverflowScrolling: 'touch',
               }}>
                 {[
                   { id: 'assessment', label: '📊 Assessment' },
@@ -379,17 +463,26 @@ export default function PatientPage() {
                   { id: 'appointments', label: '📅 Appointments' },
                   { id: 'bed', label: '🛏️ Bed' },
                   { id: 'instructions', label: '📋 Instructions' },
-                  { id: 'prescriptions', label: `💊 Prescriptions${prescriptions.length ? ` (${prescriptions.length})` : ''}` },
+                  { id: 'prescriptions', label: `💊 Rx${prescriptions.length ? ` (${prescriptions.length})` : ''}` },
                 ].map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     style={{
-                      padding: '8px 12px', borderRadius: '4px 4px 0 0', border: 'none',
-                      background: activeTab === tab.id ? '#2563EB' : '#F3F4F6',
-                      color: activeTab === tab.id ? 'white' : '#6B7280',
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-                      transition: 'all 0.2s',
+                      padding: '10px 12px',
+                      borderRadius: '6px 6px 0 0',
+                      border: 'none',
+                      background: activeTab === tab.id ? s.colors.primary : s.colors.gray[100],
+                      color: activeTab === tab.id ? 'white' : s.colors.gray[600],
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s ease',
+                      minHeight: '44px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      minWidth: 'min-content',
                     }}
                   >
                     {tab.label}
@@ -418,7 +511,7 @@ export default function PatientPage() {
 
               {activeTab === 'guidance' && (
                 <div style={{ marginTop: 16 }}>
-                  <ImmediateGuidance result={result} />
+                  <ImmediateGuidance result={result} lang={result.detectedLanguage || uiLang} />
                   {result.risk_level === 'CRITICAL' && <AmbulanceButton riskLevel={result.risk_level} />}
                 </div>
               )}
@@ -444,7 +537,9 @@ export default function PatientPage() {
                       padding: 12, borderRadius: 8, background: '#FFF7ED',
                       border: '1px solid #FED7AA', marginBottom: 12, fontSize: 12, color: '#92400E',
                     }}>
-                      Waiting for doctor to add prescriptions. This tab updates automatically.
+                      {isHindi
+                        ? 'डॉक्टर के प्रिस्क्रिप्शन देने का इंतजार है। यह टैब अपने आप अपडेट होता है।'
+                        : 'Waiting for doctor to add prescriptions. This tab updates automatically.'}
                     </div>
                   )}
                   <PrescriptionsList prescriptions={prescriptions} />
@@ -453,7 +548,7 @@ export default function PatientPage() {
             </>
           )}
 
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 32, paddingTop: 20, borderTop: `1px solid ${s.colors.gray[200]}` }}>
             <button
               onClick={() => {
                 setResult(null)
@@ -466,12 +561,27 @@ export default function PatientPage() {
                 setLookupPatientId('')
               }}
               style={{
-                width: '100%', padding: '12px 24px', borderRadius: 8, border: 'none',
-                background: '#6B7280', color: 'white', fontSize: 14, fontWeight: 600,
+                width: '100%',
+                padding: '12px 24px',
+                borderRadius: 10,
+                border: `2px solid ${s.colors.gray[300]}`,
+                background: 'white',
+                color: s.colors.gray[700],
+                fontSize: 14,
+                fontWeight: 600,
                 cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseOver={(e) => {
+                e.target.style.background = s.colors.gray[100]
+                e.target.style.borderColor = s.colors.gray[400]
+              }}
+              onMouseOut={(e) => {
+                e.target.style.background = 'white'
+                e.target.style.borderColor = s.colors.gray[300]
               }}
             >
-              Start Over
+              {isHindi ? 'नई जांच शुरू करें' : 'Start Over'}
             </button>
           </div>
         </>

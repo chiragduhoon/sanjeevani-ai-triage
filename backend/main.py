@@ -42,6 +42,29 @@ def _save(path, data):
 patient_queue = _load(QUEUE_FILE, [])      # list of all queued patient records
 prescriptions_db = _load(RX_FILE, {})      # patientId -> list of prescriptions
 
+# ---- Hospital beds ----
+BEDS_FILE = os.path.join(DATA_DIR, "beds.json")
+DEFAULT_BEDS = {
+    "ICU":       {"total": 5,  "occupied": []},
+    "EMERGENCY": {"total": 8,  "occupied": []},
+    "GENERAL":   {"total": 15, "occupied": []},
+    "PRIVATE":   {"total": 4,  "occupied": []},
+}
+# occupied entries look like {"bed": int, "patient": str, "since": str}
+beds_db = _load(BEDS_FILE, DEFAULT_BEDS)
+
+
+def _beds_view():
+    """Bed state with computed availability for clients."""
+    return {
+        ward: {
+            "total": data["total"],
+            "occupied": data["occupied"],
+            "available": max(0, data["total"] - len(data["occupied"])),
+        }
+        for ward, data in beds_db.items()
+    }
+
 
 @app.post("/triage")
 async def triage(request: dict):
@@ -177,6 +200,76 @@ async def remove_from_queue(patient_id: str):
     _save(QUEUE_FILE, patient_queue)
     await manager.broadcast_json({"type": "queue_remove", "patientId": patient_id})
     return {"status": "removed", "patientId": patient_id}
+
+
+# ---- Hospital bed endpoints (maintained by the Bed Desk page) ----
+
+async def _broadcast_beds():
+    _save(BEDS_FILE, beds_db)
+    await manager.broadcast_json({"type": "beds_update", "beds": _beds_view()})
+
+
+@app.get("/api/beds")
+async def get_beds():
+    """Current bed state for all wards (patient + doctor views poll/subscribe)."""
+    return _beds_view()
+
+
+@app.put("/api/beds/{ward}")
+async def set_ward(ward: str, request: dict):
+    """Create a ward or update its total capacity."""
+    ward = ward.upper().strip()
+    if not ward:
+        raise HTTPException(status_code=400, detail="Ward name required")
+    total = max(0, int(request.get("total", 0)))
+    if ward in beds_db:
+        beds_db[ward]["total"] = total
+        # Drop occupants that no longer fit if capacity was reduced
+        beds_db[ward]["occupied"] = [o for o in beds_db[ward]["occupied"] if o["bed"] <= total]
+    else:
+        beds_db[ward] = {"total": total, "occupied": []}
+    await _broadcast_beds()
+    return _beds_view()
+
+
+@app.delete("/api/beds/{ward}")
+async def delete_ward(ward: str):
+    """Remove a ward entirely."""
+    beds_db.pop(ward.upper().strip(), None)
+    await _broadcast_beds()
+    return _beds_view()
+
+
+@app.post("/api/beds/{ward}/admit")
+async def admit_bed(ward: str, request: dict):
+    """Admit a patient into the next free bed of a ward."""
+    ward = ward.upper().strip()
+    if ward not in beds_db:
+        raise HTTPException(status_code=404, detail="Ward not found")
+    data = beds_db[ward]
+    if len(data["occupied"]) >= data["total"]:
+        raise HTTPException(status_code=400, detail="No beds available in this ward")
+    used = {o["bed"] for o in data["occupied"]}
+    bed_no = next(i for i in range(1, data["total"] + 1) if i not in used)
+    data["occupied"].append({
+        "bed": bed_no,
+        "patient": (request.get("patient") or "Unknown").strip(),
+        "since": datetime.now().strftime("%d %b %Y %H:%M"),
+    })
+    await _broadcast_beds()
+    return _beds_view()
+
+
+@app.post("/api/beds/{ward}/discharge")
+async def discharge_bed(ward: str, request: dict):
+    """Free a specific bed in a ward."""
+    ward = ward.upper().strip()
+    if ward not in beds_db:
+        raise HTTPException(status_code=404, detail="Ward not found")
+    bed_no = int(request.get("bed"))
+    beds_db[ward]["occupied"] = [o for o in beds_db[ward]["occupied"] if o["bed"] != bed_no]
+    await _broadcast_beds()
+    return _beds_view()
 
 
 @app.get("/health")

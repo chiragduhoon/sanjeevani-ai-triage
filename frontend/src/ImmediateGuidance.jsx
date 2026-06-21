@@ -1,10 +1,10 @@
 import React from 'react'
 import { getGuidanceForResult } from './careGuidance'
 
-export default function ImmediateGuidance({ result }) {
+export default function ImmediateGuidance({ result, lang = 'en' }) {
   if (!result) return null
 
-  const guidance = getGuidanceForResult(result)
+  const guidance = getGuidanceForResult(result, lang)
 
   return (
     <div style={{

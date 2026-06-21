@@ -93,14 +93,104 @@ export const SYMPTOM_SPECIFIC_GUIDANCE = {
   ],
 }
 
-export function getGuidanceForResult(result) {
-  const riskGuidance = GUIDANCE_BY_RISK[result.risk_level] || GUIDANCE_BY_RISK.LOW
+export const HINDI_GUIDANCE_BY_RISK = {
+  CRITICAL: {
+    title: 'तुरंत कार्रवाई आवश्यक है',
+    actions: [
+      'अभी एम्बुलेंस के लिए 108 पर कॉल करें',
+      'खुद गाड़ी चलाने की कोशिश न करें',
+      'ऑपरेटर को अपने लक्षण बताएं',
+      'शांत रहें और निर्देशों का पालन करें',
+      'अपना पहचान पत्र और आयुष्मान कार्ड तैयार रखें',
+    ],
+    backgroundColor: '#FEF2F2',
+    borderColor: '#DC2626',
+    textColor: '#991B1B',
+  },
+  HIGH: {
+    title: 'जल्द चिकित्सा सहायता लें',
+    actions: [
+      'कुछ घंटों के भीतर डॉक्टर से मिलें',
+      'अपने प्राथमिक चिकित्सक से संपर्क करें',
+      'लक्षण बिगड़ने पर आपातकालीन कक्ष जाएं',
+      'अपना चिकित्सा इतिहास तैयार रखें',
+      'इन लक्षणों को नज़रअंदाज़ न करें',
+    ],
+    backgroundColor: '#FEF3C7',
+    borderColor: '#D97706',
+    textColor: '#92400E',
+  },
+  MODERATE: {
+    title: 'अपॉइंटमेंट बुक करें',
+    actions: [
+      'अपने प्राथमिक चिकित्सक से संपर्क करें',
+      '24-48 घंटों के भीतर अपॉइंटमेंट लें',
+      'लक्षणों में किसी बदलाव पर ध्यान दें',
+      'आराम करें और पानी पीते रहें',
+      'भारी गतिविधि से बचें',
+    ],
+    backgroundColor: '#F3E8FF',
+    borderColor: '#A855F7',
+    textColor: '#581C87',
+  },
+  LOW: {
+    title: 'स्वयं देखभाल निर्देश',
+    actions: [
+      'आराम करें और अपनी स्थिति पर नज़र रखें',
+      'पर्याप्त पानी पिएं और अच्छा खाएं',
+      'ओवर-द-काउंटर दवाइयाँ मदद कर सकती हैं',
+      'लक्षण बढ़ने पर चिकित्सा सहायता लें',
+      'ज़रूरत हो तो नियमित जांच बुक करें',
+    ],
+    backgroundColor: '#DBEAFE',
+    borderColor: '#0284C7',
+    textColor: '#0C2340',
+  },
+}
+
+export const HINDI_SYMPTOM_SPECIFIC_GUIDANCE = {
+  'chest pain': [
+    'तुरंत बैठ जाएं या लेट जाएं',
+    'कोई भी शारीरिक गतिविधि बंद करें',
+    'एम्बुलेंस के लिए 108 पर कॉल करें',
+    'यदि एलर्जी नहीं है तो एस्पिरिन चबाएं (डिस्पैचर से पूछें)',
+    'तंग कपड़े ढीले करें',
+  ],
+  'difficulty breathing': [
+    'सीधे बैठें — इससे सांस लेना आसान होगा',
+    'तुरंत एम्बुलेंस के लिए 108 पर कॉल करें',
+    'घबराएं नहीं — धीरे-धीरे गहरी सांस लेने की कोशिश करें',
+    'यदि संभव हो तो ताज़ी हवा में जाएं',
+    'यदि अस्थमा है तो इन्हेलर पास रखें',
+  ],
+  'severe bleeding': [
+    'साफ कपड़े से सीधा दबाव लगाएं',
+    'तुरंत 108 पर कॉल करें',
+    'कपड़ा भीग जाए तो न हटाएं — ऊपर और कपड़ा लगाएं',
+    'यदि संभव हो तो घायल हिस्से को ऊपर उठाएं',
+    'शांत रहें',
+  ],
+  'stroke': [
+    'ध्यान दें कि लक्षण कब शुरू हुए',
+    'तुरंत 108 पर कॉल करें',
+    'कुछ खाएं-पिएं नहीं',
+    'व्यक्ति को शांत और स्थिर रखें',
+    'समय बहुत महत्वपूर्ण है — हर मिनट मायने रखता है',
+  ],
+}
+
+export function getGuidanceForResult(result, lang = 'en') {
+  const isHindi = lang === 'hi'
+  const guidanceMap = isHindi ? HINDI_GUIDANCE_BY_RISK : GUIDANCE_BY_RISK
+  const specificMap = isHindi ? HINDI_SYMPTOM_SPECIFIC_GUIDANCE : SYMPTOM_SPECIFIC_GUIDANCE
+
+  const riskGuidance = guidanceMap[result.risk_level] || guidanceMap.LOW
 
   // Check for specific symptoms in the transcript
   const transcript = result.transcript?.toLowerCase() || ''
   const specificActions = []
 
-  for (const [symptom, actions] of Object.entries(SYMPTOM_SPECIFIC_GUIDANCE)) {
+  for (const [symptom, actions] of Object.entries(specificMap)) {
     if (transcript.includes(symptom)) {
       specificActions.push(...actions)
       break

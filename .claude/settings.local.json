@@ -31,7 +31,9 @@
       "Bash(curl -s -X POST http://localhost:8000/triage -H \"Content-Type: application/json\" -d '{\"transcript\":\"I have a headache\",\"patientId\":\"OKTEST-1\",\"patientName\":\"Test\"}')",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:5174/triage -H \"Content-Type: application/json\" -d '{\"transcript\":\"chest pain\",\"patientId\":\"OKTEST-2\"}')",
       "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-1 -o /dev/null)",
-      "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-2 -o /dev/null)"
+      "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-2 -o /dev/null)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 uvicorn main:app --host 0.0.0.0 --port 8000 --reload)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique | ForEach-Object { Write-Host \"Killing PID $_\"; Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })"
     ]
   }
 }

@@ -1,13 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { s } from './styles'
 
-export default function VoiceInput({ onTranscriptReady }) {
+export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [interim, setInterim] = useState('')
   const [supported, setSupported] = useState(true)
   const [error, setError] = useState('')
   const recognitionRef = useRef(null)
+  // Keep a ref so toggleListening always reads the latest lang without needing the effect to re-run
+  const langRef = useRef(lang)
+  useEffect(() => { langRef.current = lang }, [lang])
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -60,6 +63,8 @@ export default function VoiceInput({ onTranscriptReady }) {
       setTranscript('')
       setInterim('')
       try {
+        // Apply current language setting before each start
+        recognitionRef.current.lang = langRef.current === 'hi' ? 'hi-IN' : 'en-US'
         recognitionRef.current.start()
         setIsListening(true)
       } catch (err) {
@@ -75,13 +80,15 @@ export default function VoiceInput({ onTranscriptReady }) {
 
   const fullDisplay = transcript + interim
 
+  const isHindi = lang === 'hi'
+
   if (!supported) {
     return (
       <div style={{ textAlign: 'center', padding: 12, color: '#6B7280', fontSize: 14 }}>
         <p style={{ fontWeight: 500, marginBottom: 8 }}>Voice input requires Chrome or Edge</p>
         <textarea
           style={s.textArea}
-          placeholder="Type your symptoms here instead..."
+          placeholder={isHindi ? 'यहाँ अपने लक्षण लिखें...' : 'Type your symptoms here instead...'}
           value={transcript}
           onChange={(e) => setTranscript(e.target.value)}
           rows={4}
@@ -91,23 +98,40 @@ export default function VoiceInput({ onTranscriptReady }) {
           disabled={!transcript.trim()}
           onClick={handleSubmit}
         >
-          Analyze symptoms
+          {isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze symptoms'}
         </button>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 16,
+      width: '100%',
+    }}>
       {/* Mic button */}
       <button
         onClick={toggleListening}
         style={{
-          width: 72, height: 72, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 0.3s ease',
-          background: isListening ? '#DC2626' : '#2563EB',
-          boxShadow: isListening ? '0 0 0 8px rgba(220,38,38,0.15)' : 'none',
+          width: 80,
+          height: 80,
+          borderRadius: '50%',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          background: isListening
+            ? 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)'
+            : 'linear-gradient(135deg, #0F766E 0%, #14B8A6 100%)',
+          boxShadow: isListening
+            ? '0 0 0 12px rgba(220, 38, 38, 0.15), 0 8px 24px rgba(220, 38, 38, 0.3)'
+            : '0 8px 24px rgba(15, 118, 110, 0.25)',
+          transform: isListening ? 'scale(1.05)' : 'scale(1)',
         }}
       >
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -125,7 +149,9 @@ export default function VoiceInput({ onTranscriptReady }) {
       </button>
 
       <p style={{ fontSize: 14, color: '#6B7280' }}>
-        {isListening ? 'Listening... tap to stop' : 'Tap to describe your symptoms'}
+        {isListening
+          ? (isHindi ? 'सुन रहा हूँ... रोकने के लिए दबाएं' : 'Listening... tap to stop')
+          : (isHindi ? 'अपने लक्षण बताने के लिए दबाएं' : 'Tap to describe your symptoms')}
       </p>
 
       {error && (
@@ -141,17 +167,30 @@ export default function VoiceInput({ onTranscriptReady }) {
       {/* Live transcript box — read-only while listening, editable after */}
       {isListening ? (
         <div style={{
-          width: '100%', borderRadius: 8, border: '2px solid #2563EB',
-          padding: 16, transition: 'all 0.2s', minHeight: fullDisplay ? 120 : 80,
+          width: '100%',
+          borderRadius: 12,
+          border: `2px solid ${s.colors.primary}`,
+          padding: 18,
+          background: 'rgba(15, 118, 110, 0.02)',
+          transition: 'all 0.2s ease',
+          minHeight: fullDisplay ? 120 : 80,
+          boxShadow: `0 0 0 3px rgba(15, 118, 110, 0.1)`,
         }}>
           {fullDisplay ? (
-            <p style={{ fontSize: 15, lineHeight: 1.6, color: '#1F2937', margin: 0 }}>
+            <p style={{ fontSize: 15, lineHeight: 1.7, color: '#1F2937', margin: 0 }}>
               {transcript}
               <span style={{ color: '#9CA3AF' }}>{interim}</span>
-              <span style={{ color: '#2563EB', animation: 'blink 1s step-end infinite', fontWeight: 300 }}>|</span>
+              <span style={{
+                color: s.colors.primary,
+                animation: 'blink 1s step-end infinite',
+                fontWeight: 300,
+                marginLeft: 2,
+              }}>|</span>
             </p>
           ) : (
-            <p style={{ fontSize: 14, color: '#D1D5DB', margin: 0 }}>Start speaking...</p>
+            <p style={{ fontSize: 14, color: '#9CA3AF', margin: 0, fontStyle: 'italic' }}>
+              {isHindi ? 'बोलना शुरू करें...' : 'Start speaking...'}
+            </p>
           )}
         </div>
       ) : (
@@ -159,12 +198,14 @@ export default function VoiceInput({ onTranscriptReady }) {
           <textarea
             style={{
               ...s.textArea,
-              border: transcript.trim() ? '2px solid #2563EB' : '2px solid #E5E7EB',
-              minHeight: 100,
+              border: transcript.trim() ? `2px solid ${s.colors.primary}` : `2px solid ${s.colors.gray[200]}`,
+              boxShadow: transcript.trim() ? `0 0 0 3px rgba(15, 118, 110, 0.1)` : 'none',
+              minHeight: 110,
               fontSize: 15,
-              lineHeight: 1.6,
+              lineHeight: 1.7,
+              padding: '14px 16px',
             }}
-            placeholder="Your symptoms will appear here — you can edit them before submitting..."
+            placeholder={isHindi ? 'आपके लक्षण यहाँ दिखेंगे — सबमिट करने से पहले संपादित कर सकते हैं...' : 'Your symptoms will appear here — edit before submitting...'}
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
             rows={4}
@@ -174,14 +215,24 @@ export default function VoiceInput({ onTranscriptReady }) {
               onClick={() => { setTranscript(''); setInterim('') }}
               style={{
                 alignSelf: 'flex-end',
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: '1px solid #E5E7EB',
-                background: 'white',
-                color: '#6B7280',
+                marginTop: 10,
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: `1px solid ${s.colors.gray[300]}`,
+                background: s.colors.gray[50],
+                color: s.colors.gray[600],
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseOver={(e) => {
+                e.target.style.background = s.colors.gray[100]
+                e.target.style.borderColor = s.colors.gray[400]
+              }}
+              onMouseOut={(e) => {
+                e.target.style.background = s.colors.gray[50]
+                e.target.style.borderColor = s.colors.gray[300]
               }}
             >
               ✕ Clear & Redo
@@ -193,13 +244,30 @@ export default function VoiceInput({ onTranscriptReady }) {
       {/* Type manually hint when nothing captured yet */}
       {!isListening && !transcript.trim() && (
         <p style={{ fontSize: 12, color: '#D1D5DB', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-          or type above manually
+          {isHindi ? 'या ऊपर टाइप करें' : 'or type above manually'}
         </p>
       )}
 
       {/* Submit button */}
       {transcript.trim() && !isListening && (
-        <button style={s.submitBtn} onClick={handleSubmit}>Analyze symptoms</button>
+        <button
+          style={{
+            ...s.submitBtn,
+            background: `linear-gradient(135deg, ${s.colors.primary} 0%, ${s.colors.primaryLight} 100%)`,
+            marginTop: 12,
+          }}
+          onMouseOver={(e) => {
+            e.target.style.boxShadow = `0 8px 16px rgba(15, 118, 110, 0.35)`
+            e.target.style.transform = 'translateY(-2px)'
+          }}
+          onMouseOut={(e) => {
+            e.target.style.boxShadow = s.submitBtn.boxShadow
+            e.target.style.transform = 'translateY(0)'
+          }}
+          onClick={handleSubmit}
+        >
+          {isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze Symptoms'}
+        </button>
       )}
     </div>
   )

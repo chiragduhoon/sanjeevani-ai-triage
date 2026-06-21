@@ -1,158 +1,101 @@
-import React, { useState } from 'react'
-import { BED_TYPES } from './mockData'
+import React, { useState, useEffect } from 'react'
 import { s } from './styles'
 
+const WARD_COLORS = {
+  ICU:       { bg: '#F0F9FF', border: '#0284C7', text: '#0C2340' },
+  EMERGENCY: { bg: '#FEE2E2', border: '#DC2626', text: '#991B1B' },
+  GENERAL:   { bg: '#F0FDF4', border: '#16A34A', text: '#166534' },
+  PRIVATE:   { bg: '#F5F3FF', border: '#A855F7', text: '#581C87' },
+}
+const colorFor = (w) => WARD_COLORS[w] || { bg: '#F9FAFB', border: '#6B7280', text: '#374151' }
+
 export default function BedManagement() {
-  const [beds, setBeds] = useState(BED_TYPES)
-  const [assignments, setAssignments] = useState({})
+  const [beds, setBeds] = useState({})
 
-  const getBedColor = (type) => {
-    const colors = {
-      ICU: { bg: '#F0F9FF', border: '#0284C7', text: '#0C2340' },
-      EMERGENCY: { bg: '#FEE2E2', border: '#DC2626', text: '#991B1B' },
-      GENERAL: { bg: '#F0FDF4', border: '#16A34A', text: '#166534' },
-      PRIVATE: { bg: '#F5F3FF', border: '#A855F7', text: '#581C87' },
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/beds')
+        if (res.ok && !cancelled) setBeds(await res.json())
+      } catch {}
     }
-    return colors[type] || colors.GENERAL
-  }
+    load()
 
-  const getNextBedNumber = (type) => {
-    const assigned = assignments[type] || []
-    return assigned.length + 1
-  }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${protocol}//localhost:8000/ws/doctor`)
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data)
+      if (m.type === 'beds_update' && m.beds) setBeds(m.beds)
+    }
+    return () => { cancelled = true; ws.close() }
+  }, [])
+
+  const wards = Object.entries(beds)
 
   return (
     <div style={s.card}>
-      <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: '0 0 16px' }}>
-        🏥 Hospital Bed Management
-      </h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>🏥 Hospital Bed Status</h3>
+        <a href="/hospital" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#0284C7', fontWeight: 600 }}>
+          Open Bed Desk →
+        </a>
+      </div>
+      <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 16px' }}>
+        Live view — beds are admitted/discharged at the Hospital Bed Desk
+      </p>
 
+      {/* Ward summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
-        {Object.entries(beds).map(([bedType, { total, available }]) => {
-          const color = getBedColor(bedType)
-          const occupancy = total - available
-
+        {wards.map(([ward, d]) => {
+          const c = colorFor(ward)
+          const occupied = d.total - d.available
           return (
-            <div
-              key={bedType}
-              style={{
-                padding: 12,
-                borderRadius: 8,
-                background: color.bg,
-                border: `2px solid ${color.border}`,
-              }}
-            >
-              <p style={{ fontSize: 12, fontWeight: 600, color: color.text, margin: '0 0 8px' }}>
-                {bedType}
-              </p>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 8,
-                fontSize: 11,
-              }}>
+            <div key={ward} style={{ padding: 12, borderRadius: 8, background: c.bg, border: `2px solid ${c.border}` }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: c.text, margin: '0 0 8px' }}>{ward}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
                 <div>
-                  <p style={{ color: color.text, opacity: 0.7, margin: '0 0 2px' }}>Occupied</p>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: color.text, margin: 0 }}>
-                    {occupancy}
-                  </p>
+                  <p style={{ color: c.text, opacity: 0.7, margin: '0 0 2px' }}>Occupied</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: c.text, margin: 0 }}>{occupied}</p>
                 </div>
                 <div>
-                  <p style={{ color: color.text, opacity: 0.7, margin: '0 0 2px' }}>Available</p>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: color.text, margin: 0 }}>
-                    {available}
-                  </p>
+                  <p style={{ color: c.text, opacity: 0.7, margin: '0 0 2px' }}>Available</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: c.text, margin: 0 }}>{d.available}</p>
                 </div>
               </div>
-              <div style={{
-                marginTop: 8,
-                height: 6,
-                borderRadius: 3,
-                background: 'rgba(0,0,0,0.1)',
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  height: '100%',
-                  width: `${(occupancy / total) * 100}%`,
-                  background: color.border,
-                }} />
+              <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${d.total ? (occupied / d.total) * 100 : 0}%`, background: c.border }} />
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* Assignments */}
-      {Object.keys(assignments).length > 0 && (
+      {/* Admitted patients */}
+      {wards.some(([, d]) => (d.occupied || []).length > 0) ? (
         <div>
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: '0 0 12px' }}>
-            Current Bed Assignments
-          </h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: '0 0 12px' }}>Admitted patients</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Object.entries(assignments).map(([bedType, patients]) =>
-              patients.map((patient, idx) => (
-                <div
-                  key={`${bedType}-${idx}`}
-                  style={{
-                    padding: 10,
-                    borderRadius: 6,
-                    background: getBedColor(bedType).bg,
-                    border: `1px solid ${getBedColor(bedType).border}`,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 12 }}>
-                    <p style={{ fontWeight: 600, color: '#111827', margin: 0 }}>
-                      {bedType} - Bed {idx + 1}
+            {wards.flatMap(([ward, d]) =>
+              (d.occupied || []).slice().sort((a, b) => a.bed - b.bed).map((o) => {
+                const c = colorFor(ward)
+                return (
+                  <div key={`${ward}-${o.bed}`} style={{
+                    padding: 10, borderRadius: 6, background: c.bg, border: `1px solid ${c.border}`,
+                  }}>
+                    <p style={{ fontWeight: 600, color: '#111827', margin: 0, fontSize: 12 }}>
+                      {ward}-{o.bed} · {o.patient}
                     </p>
-                    <p style={{ fontSize: 11, color: '#6B7280', margin: '2px 0 0' }}>
-                      {patient}
-                    </p>
+                    <p style={{ fontSize: 11, color: '#6B7280', margin: '2px 0 0' }}>Since {o.since}</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setAssignments(prev => ({
-                        ...prev,
-                        [bedType]: prev[bedType].filter((_, i) => i !== idx),
-                      }))
-                      setBeds(prev => ({
-                        ...prev,
-                        [bedType]: { ...prev[bedType], available: prev[bedType].available + 1 },
-                      }))
-                    }}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 4,
-                      border: 'none',
-                      background: '#EF4444',
-                      color: 'white',
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Discharge
-                  </button>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>
-      )}
-
-      {(!assignments || Object.keys(assignments).length === 0) && (
-        <div style={{
-          padding: 12,
-          borderRadius: 8,
-          background: '#F9FAFB',
-          border: '1px solid #E5E7EB',
-          textAlign: 'center',
-        }}>
-          <p style={{ color: '#6B7280', fontSize: 12, margin: 0 }}>
-            No bed assignments yet. Assign beds from the patient queue.
-          </p>
+      ) : (
+        <div style={{ padding: 12, borderRadius: 8, background: '#F9FAFB', border: '1px solid #E5E7EB', textAlign: 'center' }}>
+          <p style={{ color: '#6B7280', fontSize: 12, margin: 0 }}>No patients currently admitted.</p>
         </div>
       )}
     </div>
