@@ -3,6 +3,8 @@ import os
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from triage import analyze_transcript
 from websocket import manager
 
@@ -277,7 +279,14 @@ async def health():
     return {"status": "ok", "backend": "sanjeevani", "queue_count": len(patient_queue)}
 
 
+# Serve frontend static files
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
