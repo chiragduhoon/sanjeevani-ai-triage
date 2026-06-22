@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { connectDoctorSocket } from './realtime'
 import { s } from './styles'
 
 const WARD_ICONS = { ICU: '🏥', EMERGENCY: '🚑', GENERAL: '🛏️', PRIVATE: '🏨' }
@@ -23,13 +24,12 @@ export default function BedAvailability() {
     }
     load()
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//localhost:8000/ws/doctor`)
-    ws.onmessage = (e) => {
-      const m = JSON.parse(e.data)
-      if (m.type === 'beds_update' && m.beds) setBeds(m.beds)
-    }
-    return () => { cancelled = true; ws.close() }
+    const conn = connectDoctorSocket({
+      onMessage: (m) => {
+        if (m.type === 'beds_update' && m.beds) setBeds(m.beds)
+      },
+    })
+    return () => { cancelled = true; conn.close() }
   }, [])
 
   const wards = Object.entries(beds)

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { connectDoctorSocket } from './realtime'
 import { s } from './styles'
 
 const WARD_COLORS = {
@@ -93,16 +94,13 @@ export default function HospitalPage() {
     if (!authed) return
     loadBeds()
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//localhost:8000/ws/doctor`)
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => setConnected(false)
-    ws.onerror = () => setConnected(false)
-    ws.onmessage = (e) => {
-      const m = JSON.parse(e.data)
-      if (m.type === 'beds_update' && m.beds) setBeds(m.beds)
-    }
-    return () => ws.close()
+    const conn = connectDoctorSocket({
+      onStatus: setConnected,
+      onMessage: (m) => {
+        if (m.type === 'beds_update' && m.beds) setBeds(m.beds)
+      },
+    })
+    return () => conn.close()
   }, [authed])
 
   if (!authed) return <PinGate onLogin={() => setAuthed(true)} />

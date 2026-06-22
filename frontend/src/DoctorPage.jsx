@@ -9,6 +9,7 @@ import PrescriptionCreator from './PrescriptionCreator'
 import DoctorNotes from './DoctorNotes'
 import PatientHistory from './PatientHistory'
 import { savePrescriptions, savePatientNotes, getPatientById, generatePatientId, updatePatientDetails } from './patientHistoryStorage'
+import { connectDoctorSocket } from './realtime'
 
 export default function DoctorPage() {
   const [authenticated, setAuthenticated] = useState(
@@ -16,7 +17,7 @@ export default function DoctorPage() {
   )
   // Queue is cached in the doctor's own localStorage so a page refresh shows
   // it instantly and it never depends on backend/WebSocket timing.
-  const QUEUE_CACHE_KEY = 'sanjeevani_doctor_queue'
+  const QUEUE_CACHE_KEY = 'sanjeevani_doctor_queue_v2'
   const [patients, setPatients] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(QUEUE_CACHE_KEY) || '[]')
@@ -30,6 +31,9 @@ export default function DoctorPage() {
   const [showCriticalAlert, setShowCriticalAlert] = useState(false)
   const [activeTab, setActiveTab] = useState('queue') // queue, bed, prescriptions, notes
   const [lastCriticalPatient, setLastCriticalPatient] = useState(null)
+  // Shown when a backend write (discharge/clear/status) fails, so the doctor
+  // isn't left assuming an action succeeded when it didn't.
+  const [actionError, setActionError] = useState(null)
 
   // Persist the queue to localStorage whenever it changes
   useEffect(() => {
@@ -41,18 +45,11 @@ export default function DoctorPage() {
   useEffect(() => {
     if (!authenticated) return
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//localhost:8000/ws/doctor`)
-
-    ws.onopen = () => {
-      console.log('Connected to doctor WebSocket')
-      setConnected(true)
-      // NOTE: we do NOT clear the queue here. The backend replays its queue
-      // right after connect; we merge those in by patientId (dedupe below).
-    }
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data)
+    // Self-healing socket: on connect the backend replays its queue, which we
+    // merge in by patientId (dedupe below). Reconnects on its own after a drop.
+    const conn = connectDoctorSocket({
+      onStatus: setConnected,
+      onMessage: (message) => {
 
       if (message.type === 'triage_result') {
         // Keep the full message (incl. patientId, patientName, queueStatus)
@@ -72,13 +69,14 @@ export default function DoctorPage() {
           setShowCriticalAlert(true)
         }
       } else if (message.type === 'emergency_alert') {
+        // Stays until the doctor explicitly dismisses it — a critical alert must
+        // not silently disappear if they happen to be looking away.
         setAlert({
           symptoms: message.symptoms,
           risk_level: message.risk_level,
           emergency_flags: message.emergency_flags,
           patientName: message.patientName,
         })
-        setTimeout(() => setAlert(null), 6000)
       } else if (message.type === 'queue_status_update') {
         setPatients((prev) => prev.map(p =>
           p.patientId === message.patientId
@@ -91,19 +89,10 @@ export default function DoctorPage() {
       } else if (message.type === 'queue_remove') {
         setPatients((prev) => prev.filter(p => p.patientId !== message.patientId))
       }
-    }
+      },
+    })
 
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err)
-      setConnected(false)
-    }
-
-    ws.onclose = () => {
-      console.log('Disconnected from doctor WebSocket')
-      setConnected(false)
-    }
-
-    return () => ws.close()
+    return () => conn.close()
   }, [authenticated])
 
   // Single entry point for selecting the active patient. Guarantees the
@@ -149,6 +138,7 @@ export default function DoctorPage() {
       await fetch(`/api/queue/${id}`, { method: 'DELETE' })
     } catch (err) {
       console.error('Discharge backend update failed:', err)
+      setActionError('Discharge may not have saved on the server — check the connection. It will sync when reconnected.')
     }
   }
 
@@ -163,7 +153,16 @@ export default function DoctorPage() {
       await fetch('/api/queue', { method: 'DELETE' })
     } catch (err) {
       console.error('Could not clear backend queue:', err)
+      setActionError('Could not clear the queue on the server — it may reappear on reconnect.')
     }
+  }
+
+  // Live stats for the credibility strip — derived from the current queue.
+  const stats = {
+    total: patients.length,
+    critical: patients.filter(p => p.risk_level === 'CRITICAL').length,
+    waiting: patients.filter(p => (p.queueStatus || 'WAITING') === 'WAITING').length,
+    treated: patients.filter(p => p.queueStatus === 'TREATED' || p.queueStatus === 'DISCHARGED').length,
   }
 
   if (!authenticated) {
@@ -191,7 +190,28 @@ export default function DoctorPage() {
           />
         )}
 
-        {alert && <EmergencyAlert patient={alert} />}
+        {alert && <EmergencyAlert patient={alert} onDismiss={() => setAlert(null)} />}
+
+        {/* Action failure banner — backend write didn't go through */}
+        {actionError && (
+          <div style={{
+            marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+            background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B',
+            display: 'flex', alignItems: 'center', gap: 10, fontSize: 13,
+          }}>
+            <span style={{ flex: 1 }}>⚠️ {actionError}</span>
+            <button
+              onClick={() => setActionError(null)}
+              aria-label="Dismiss"
+              style={{
+                background: 'none', border: 'none', color: '#991B1B',
+                fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Connection status */}
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -202,6 +222,28 @@ export default function DoctorPage() {
           <span style={{ fontSize: 12, color: connected ? '#059669' : '#EF4444', fontWeight: 500 }}>
             {connected ? 'Connected' : 'Disconnected'}
           </span>
+        </div>
+
+        {/* Live impact stats */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Patients today', value: stats.total, color: '#2563EB' },
+            { label: 'Critical', value: stats.critical, color: '#DC2626' },
+            { label: 'Awaiting review', value: stats.waiting, color: '#D97706' },
+            { label: 'Treated', value: stats.treated, color: '#059669' },
+          ].map(stat => (
+            <div key={stat.label} style={{
+              flex: '1 1 140px', background: 'white', border: '1px solid #E5E7EB',
+              borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            }}>
+              <div style={{ fontSize: 26, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
+                {stat.value}
+              </div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 6, fontWeight: 600 }}>
+                {stat.label}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Tab Navigation */}
@@ -519,6 +561,15 @@ export default function DoctorPage() {
                       const existingNotes = patient?.notes || ''
                       const allNotes = existingNotes + (existingNotes ? '\n\n' : '') + note.content
                       savePatientNotes(selectedPatient.patientId, allNotes)
+                      // Push to the backend so the patient's device sees it live.
+                      fetch(`/api/notes/${selectedPatient.patientId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: note.content, type: note.type }),
+                      }).catch((err) => {
+                        console.error('Could not send note to patient:', err)
+                        setActionError('Note saved locally but could not be sent to the patient.')
+                      })
                     }
                   }}
                 />

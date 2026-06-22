@@ -33,7 +33,19 @@
       "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-1 -o /dev/null)",
       "Bash(curl -s -X DELETE http://localhost:8000/api/queue/OKTEST-2 -o /dev/null)",
       "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 uvicorn main:app --host 0.0.0.0 --port 8000 --reload)",
-      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique | ForEach-Object { Write-Host \"Killing PID $_\"; Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })"
+      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique | ForEach-Object { Write-Host \"Killing PID $_\"; Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })",
+      "Bash(PYTHONUTF8=1 python -c ' *)",
+      "Read(//c/Program Files/nodejs/**)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" --version)",
+      "Read(//c/Users/pooja/AppData/Roaming/**)",
+      "Read(//c/Program Files/**)",
+      "PowerShell(Write-Output \"--- powershell sees ---\"; \\(Get-Command node\\).Source; node --version; Write-Output \"--- nvm ---\"; if \\(Get-Command nvm -ErrorAction SilentlyContinue\\) { nvm list } else { Write-Output \"no nvm on PATH\" })",
+      "PowerShell(nvm use 24.14.1)",
+      "PowerShell(node --version)",
+      "PowerShell(if \\($env:GROQ_API_KEY\\) { Write-Output \"ENV VAR SET: $\\($env:GROQ_API_KEY.Substring\\(0,[Math]::Min\\(8,$env:GROQ_API_KEY.Length\\)\\)\\)... \\(len=$\\($env:GROQ_API_KEY.Length\\)\\)\" } else { Write-Output \"GROQ_API_KEY not set in environment\" })",
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile triage.py)",
+      "Bash(python -m py_compile triage.py main.py)"
     ]
   }
 }

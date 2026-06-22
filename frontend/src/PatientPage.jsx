@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import VoiceInput from './VoiceInput'
+import FollowUpThread from './FollowUpThread'
 import TriageResult from './TriageResult'
 import AmbulanceButton from './AmbulanceButton'
 import ImmediateGuidance from './ImmediateGuidance'
@@ -8,6 +9,7 @@ import BedAvailability from './BedAvailability'
 import DoctorInstructions from './DoctorInstructions'
 import PrescriptionsList from './PrescriptionsList'
 import { generatePatientId, savePatientHistory, getPatientById } from './patientHistoryStorage'
+import { connectDoctorSocket } from './realtime'
 import { RISK_COLORS, s } from './styles'
 
 const RISK_ORDER = { CRITICAL: 0, HIGH: 1, MODERATE: 2, LOW: 3 }
@@ -19,54 +21,106 @@ export default function PatientPage() {
   const [activeTab, setActiveTab] = useState('assessment')
   const [doctorInstructions, setDoctorInstructions] = useState(null)
   const [prescriptions, setPrescriptions] = useState([])
+  const [doctorNotes, setDoctorNotes] = useState([])
+  const [followups, setFollowups] = useState([])
+  // How many notes the patient has already viewed — anything beyond this is "new"
+  // and lights up a badge on the Instructions tab.
+  const [seenNotesCount, setSeenNotesCount] = useState(0)
+  const [seenFollowupsCount, setSeenFollowupsCount] = useState(0)
   const [savedPatientId, setSavedPatientId] = useState(null)
   const [patientName, setPatientName] = useState('')
   const [lookupPatientId, setLookupPatientId] = useState('')
   const [returnPatient, setReturnPatient] = useState(null)
   const [uiLang, setUiLang] = useState(() => localStorage.getItem('sanjeevani_lang') || 'en')
+  // Photos the patient optionally attaches (rash, wound, report). Each: { file, preview }.
+  const [images, setImages] = useState([])
+  const [imageError, setImageError] = useState('')
 
   const switchLang = (l) => { setUiLang(l); localStorage.setItem('sanjeevani_lang', l) }
   const isHindi = uiLang === 'hi'
 
   // Ref so WS handler always has latest patientId without stale closure
   const savedPatientIdRef = useRef(null)
+  // Reused across retries so a failed submission doesn't burn a new patient ID each time.
+  const pendingIdRef = useRef(null)
 
   useEffect(() => {
     savedPatientIdRef.current = savedPatientId
   }, [savedPatientId])
 
+  // Viewing the Instructions tab clears the "new notes" badge.
+  useEffect(() => {
+    if (activeTab === 'instructions') setSeenNotesCount(doctorNotes.length)
+  }, [activeTab, doctorNotes.length])
+
+  const unseenNotes = Math.max(0, doctorNotes.length - seenNotesCount)
+
+  // Viewing the Q&A tab clears its badge.
+  useEffect(() => {
+    if (activeTab === 'qa') setSeenFollowupsCount(followups.length)
+  }, [activeTab, followups.length])
+
+  // Badge counts only new doctor questions (patient's own replies don't notify them).
+  const unseenFollowups = Math.max(
+    0,
+    followups.slice(seenFollowupsCount).filter((m) => m.sender === 'doctor').length
+  )
+
+  const sendFollowupAnswer = async (text, image = '') => {
+    if (!savedPatientId) return
+    setFollowups((prev) => [...prev, { sender: 'patient', text, image, time: '' }])
+    try {
+      await fetch(`/api/followups/${savedPatientId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: 'patient', text, image }),
+      })
+    } catch {}
+  }
+
   useEffect(() => {
     if (!result) return
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//localhost:8000/ws/doctor`)
-
-    ws.onopen = () => console.log('Patient: connected to updates')
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-
-      if (message.type === 'triage_result') {
-        setAllPatients((prev) => [...prev, { ...message }])
-      }
-
-      // Real-time prescription push from doctor
-      if (
-        message.type === 'prescription_update' &&
-        message.patientId === savedPatientIdRef.current
-      ) {
-        setPrescriptions(message.prescriptions || [])
-        // Also persist to localStorage
-        const existing = getPatientById(savedPatientIdRef.current)
-        if (existing) {
-          import('./patientHistoryStorage').then(m =>
-            m.savePrescriptions(savedPatientIdRef.current, message.prescriptions)
-          )
+    const conn = connectDoctorSocket({
+      onMessage: (message) => {
+        if (message.type === 'triage_result') {
+          setAllPatients((prev) => [...prev, { ...message }])
         }
-      }
-    }
 
-    return () => ws.close()
+        // Real-time prescription push from doctor
+        if (
+          message.type === 'prescription_update' &&
+          message.patientId === savedPatientIdRef.current
+        ) {
+          setPrescriptions(message.prescriptions || [])
+          // Also persist to localStorage
+          const existing = getPatientById(savedPatientIdRef.current)
+          if (existing) {
+            import('./patientHistoryStorage').then(m =>
+              m.savePrescriptions(savedPatientIdRef.current, message.prescriptions)
+            )
+          }
+        }
+
+        // Real-time doctor note push
+        if (
+          message.type === 'note_update' &&
+          message.patientId === savedPatientIdRef.current
+        ) {
+          setDoctorNotes(message.notes || [])
+        }
+
+        // Real-time follow-up Q&A update
+        if (
+          message.type === 'followup_update' &&
+          message.patientId === savedPatientIdRef.current
+        ) {
+          setFollowups(message.followups || [])
+        }
+      },
+    })
+
+    return () => conn.close()
   }, [result])
 
   // Poll the backend for prescriptions so they always appear even if the
@@ -75,58 +129,157 @@ export default function PatientPage() {
     if (!savedPatientId) return
 
     let cancelled = false
-    const fetchRx = async () => {
+    const fetchUpdates = async () => {
       try {
         const res = await fetch(`/api/prescriptions/${savedPatientId}`)
-        if (!res.ok) return
-        const data = await res.json()
-        if (!cancelled && data.prescriptions) {
-          setPrescriptions((prev) =>
-            data.prescriptions.length !== prev.length ? data.prescriptions : prev
-          )
+        if (res.ok) {
+          const data = await res.json()
+          if (!cancelled && data.prescriptions) {
+            setPrescriptions((prev) =>
+              data.prescriptions.length !== prev.length ? data.prescriptions : prev
+            )
+          }
+        }
+      } catch {}
+      try {
+        const res = await fetch(`/api/notes/${savedPatientId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (!cancelled && data.notes) {
+            setDoctorNotes((prev) =>
+              data.notes.length !== prev.length ? data.notes : prev
+            )
+          }
+        }
+      } catch {}
+      try {
+        const res = await fetch(`/api/followups/${savedPatientId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (!cancelled && data.followups) {
+            setFollowups((prev) =>
+              data.followups.length !== prev.length ? data.followups : prev
+            )
+          }
         }
       } catch {}
     }
 
-    fetchRx() // immediate
-    const interval = setInterval(fetchRx, 5000)
+    fetchUpdates() // immediate
+    const interval = setInterval(fetchUpdates, 5000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [savedPatientId])
 
   const handleTranscript = async (transcript) => {
+    if (loading) return // guard against double-submit while a triage is in flight
     setLoading(true)
     setResult(null)
     setAllPatients([])
     setPrescriptions([])
 
-    const patientId = generatePatientId(patientName)
+    // Reuse the same id across retries so repeated failures don't leave id gaps.
+    const patientId = pendingIdRef.current || generatePatientId(patientName)
+    pendingIdRef.current = patientId
 
     try {
+      // Upload any attached photos first so their URLs can ride on the triage record.
+      let imageUrls = []
+      if (images.length > 0) {
+        try {
+          const form = new FormData()
+          images.forEach((img) => form.append('files', img.file))
+          const up = await fetch(`/api/images/${patientId}`, { method: 'POST', body: form })
+          if (up.ok) {
+            const upData = await up.json()
+            imageUrls = upData.urls || []
+          }
+        } catch (e) {
+          console.error('Image upload failed:', e)
+          // Non-fatal: continue with triage even if photos didn't upload.
+        }
+      }
+
       const res = await fetch('/triage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, patientId, patientName: patientName.trim(), lang: uiLang }),
+        body: JSON.stringify({
+          transcript, patientId, patientName: patientName.trim(), lang: uiLang,
+          images: imageUrls,
+        }),
       })
-      const data = await res.json()
+
+      const data = await res.json().catch(() => ({}))
+
+      // Treat an error body or non-2xx the same as a failure — keep the transcript
+      // (VoiceInput holds it) so the patient can simply tap Analyze again to retry.
+      if (!res.ok || data.error) {
+        setResult({
+          error: data.error || (isHindi
+            ? 'विश्लेषण विफल रहा। कृपया दोबारा प्रयास करें।'
+            : 'Analysis failed. Please tap Analyze to try again.'),
+        })
+        return
+      }
+
       const resultData = { ...data, transcript, time: new Date().toLocaleTimeString() }
       setResult(resultData)
 
-      if (!data.error) {
-        savePatientHistory(data, transcript, patientId, patientName.trim())
-        setSavedPatientId(patientId)
+      savePatientHistory(data, transcript, patientId, patientName.trim())
+      setSavedPatientId(patientId)
+      pendingIdRef.current = null // committed — next submission gets a fresh id
+      setImages([])               // clear attached photos after a successful submit
 
-        // Load any existing prescriptions from localStorage (same-device)
-        const existingRecord = getPatientById(patientId)
-        if (existingRecord?.prescriptions?.length) {
-          setPrescriptions(existingRecord.prescriptions)
-        }
+      // Load any existing prescriptions from localStorage (same-device)
+      const existingRecord = getPatientById(patientId)
+      if (existingRecord?.prescriptions?.length) {
+        setPrescriptions(existingRecord.prescriptions)
       }
     } catch (err) {
       console.error(err)
-      setResult({ error: 'Could not reach the backend. Is it running on localhost:8000?' })
+      setResult({
+        error: isHindi
+          ? 'सर्वर से कनेक्ट नहीं हो सका। कनेक्शन जांचें और दोबारा प्रयास करें।'
+          : 'Could not reach the server. Check your connection and tap Analyze to retry.',
+      })
     } finally {
       setLoading(false)
     }
+  }
+
+  const MAX_IMAGES = 3
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+  const handleImageSelect = (e) => {
+    setImageError('')
+    const picked = Array.from(e.target.files || [])
+    e.target.value = '' // allow re-selecting the same file later
+    const accepted = []
+    for (const file of picked) {
+      if (!file.type.startsWith('image/')) {
+        setImageError(isHindi ? 'केवल इमेज फाइलें allowed हैं।' : 'Only image files are allowed.')
+        continue
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setImageError(isHindi ? 'हर फोटो 5MB से छोटी होनी चाहिए।' : 'Each photo must be under 5MB.')
+        continue
+      }
+      accepted.push({ file, preview: URL.createObjectURL(file) })
+    }
+    setImages((prev) => {
+      const room = MAX_IMAGES - prev.length
+      if (accepted.length > room) {
+        setImageError(isHindi ? `अधिकतम ${MAX_IMAGES} फोटो।` : `You can attach up to ${MAX_IMAGES} photos.`)
+      }
+      return [...prev, ...accepted.slice(0, room)]
+    })
+  }
+
+  const removeImage = (idx) => {
+    setImages((prev) => {
+      const target = prev[idx]
+      if (target) URL.revokeObjectURL(target.preview)
+      return prev.filter((_, i) => i !== idx)
+    })
   }
 
   const getQueuePosition = () => {
@@ -313,7 +466,102 @@ export default function PatientPage() {
             <p style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 16 }}>
               {isHindi ? 'अपने लक्षण बताएं' : 'Describe your symptoms'}
             </p>
-            <VoiceInput onTranscriptReady={handleTranscript} lang={uiLang} />
+            <VoiceInput onTranscriptReady={handleTranscript} lang={uiLang} submitting={loading} />
+
+            {/* Quick examples — one tap runs a real triage. A reliable fallback if
+                the mic or network misbehaves, and a fast way to show each risk level. */}
+            <div style={{ marginTop: 14 }}>
+              <p style={{ fontSize: 12, color: s.colors.gray[500], margin: '0 0 8px' }}>
+                {isHindi ? 'या एक उदाहरण आज़माएं:' : 'Or try an example:'}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {(isHindi
+                  ? [
+                      { label: '🫀 सीने में दर्द', text: 'mujhe seene mein bahut dard ho raha hai aur saans nahi aa rahi' },
+                      { label: '🤒 तेज बुखार', text: 'mujhe do din se tez bukhar aur badan dard hai' },
+                      { label: '🤕 सिर दर्द', text: 'thoda sir dard aur khansi hai' },
+                    ]
+                  : [
+                      { label: '🫀 Chest pain', text: 'I have severe chest pain and difficulty breathing' },
+                      { label: '🤒 High fever', text: 'I have had a high fever and body pain for two days' },
+                      { label: '🤕 Headache', text: 'I have a mild headache and a cough' },
+                    ]
+                ).map((ex) => (
+                  <button
+                    key={ex.label}
+                    onClick={() => handleTranscript(ex.text)}
+                    disabled={loading}
+                    style={{
+                      background: s.colors.gray[50], border: `1px solid ${s.colors.gray[200]}`,
+                      color: s.colors.gray[700], fontSize: 13, fontWeight: 600,
+                      padding: '8px 12px', borderRadius: 20, cursor: loading ? 'default' : 'pointer',
+                      opacity: loading ? 0.5 : 1,
+                    }}
+                  >
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Optional photo attachment — a rash, wound, injury, or paper report */}
+            <div style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${s.colors.gray[200]}` }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: s.colors.gray[600], margin: '0 0 10px' }}>
+                {isHindi ? '📷 कोई फोटो जोड़ें (वैकल्पिक)' : '📷 Add a photo (optional)'}
+              </p>
+
+              {images.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+                  {images.map((img, idx) => (
+                    <div key={idx} style={{ position: 'relative' }}>
+                      <img
+                        src={img.preview}
+                        alt={`attachment ${idx + 1}`}
+                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: `1px solid ${s.colors.gray[300]}` }}
+                      />
+                      <button
+                        onClick={() => removeImage(idx)}
+                        aria-label="Remove photo"
+                        style={{
+                          position: 'absolute', top: -8, right: -8, width: 22, height: 22,
+                          borderRadius: '50%', border: 'none', background: s.colors.danger,
+                          color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', lineHeight: 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {images.length < 3 && (
+                <label style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                  padding: '10px 14px', borderRadius: 8, border: `1px dashed ${s.colors.gray[400]}`,
+                  background: s.colors.gray[50], color: s.colors.gray[600], fontSize: 13, fontWeight: 600,
+                }}>
+                  <span>＋</span>
+                  {isHindi ? 'फोटो चुनें या खींचें' : 'Choose or take a photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    onChange={handleImageSelect}
+                    disabled={loading}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              )}
+
+              {imageError && (
+                <p style={{ fontSize: 12, color: s.colors.danger, margin: '8px 0 0' }}>{imageError}</p>
+              )}
+              <p style={{ fontSize: 11, color: s.colors.gray[400], margin: '8px 0 0' }}>
+                {isHindi ? 'अधिकतम 3 फोटो · प्रत्येक 5MB तक' : 'Up to 3 photos · max 5MB each'}
+              </p>
+            </div>
           </div>
 
           {loading && (
@@ -462,13 +710,15 @@ export default function PatientPage() {
                   { id: 'guidance', label: '🆘 Guidance' },
                   { id: 'appointments', label: '📅 Appointments' },
                   { id: 'bed', label: '🛏️ Bed' },
-                  { id: 'instructions', label: '📋 Instructions' },
+                  { id: 'instructions', label: '📋 Instructions', badge: unseenNotes },
+                  { id: 'qa', label: isHindi ? '💬 सवाल-जवाब' : '💬 Q&A', badge: unseenFollowups },
                   { id: 'prescriptions', label: `💊 Rx${prescriptions.length ? ` (${prescriptions.length})` : ''}` },
                 ].map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     style={{
+                      position: 'relative',
                       padding: '10px 12px',
                       borderRadius: '6px 6px 0 0',
                       border: 'none',
@@ -482,10 +732,21 @@ export default function PatientPage() {
                       minHeight: '44px',
                       display: 'flex',
                       alignItems: 'center',
+                      gap: 6,
                       minWidth: 'min-content',
                     }}
                   >
                     {tab.label}
+                    {tab.badge > 0 && (
+                      <span style={{
+                        background: s.colors.danger, color: 'white', fontSize: 10, fontWeight: 800,
+                        minWidth: 18, height: 18, borderRadius: 9, padding: '0 5px',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        lineHeight: 1, animation: 'pulse 1.5s ease-in-out infinite',
+                      }}>
+                        {tab.badge}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -511,7 +772,10 @@ export default function PatientPage() {
 
               {activeTab === 'guidance' && (
                 <div style={{ marginTop: 16 }}>
-                  <ImmediateGuidance result={result} lang={result.detectedLanguage || uiLang} />
+                  <ImmediateGuidance result={result} lang={uiLang} />
+                  <p style={{ fontSize: 11, color: s.colors.gray[400], margin: '8px 4px 0' }}>
+                    {isHindi ? 'AI द्वारा सुझाया गया · डॉक्टर की सलाह का विकल्प नहीं' : 'AI-suggested · not a substitute for a doctor'}
+                  </p>
                   {result.risk_level === 'CRITICAL' && <AmbulanceButton riskLevel={result.risk_level} />}
                 </div>
               )}
@@ -526,7 +790,55 @@ export default function PatientPage() {
 
               {activeTab === 'instructions' && (
                 <div style={{ marginTop: 16 }}>
+                  {/* Live doctor notes pushed from the doctor's dashboard */}
+                  {doctorNotes.length > 0 && (
+                    <div style={{ ...s.card, marginBottom: 16 }}>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, color: s.colors.gray[900], margin: '0 0 14px' }}>
+                        {isHindi ? '🩺 डॉक्टर के नोट्स' : '🩺 Notes from your doctor'}
+                      </h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {doctorNotes.map((note, idx) => (
+                          <div key={idx} style={{
+                            padding: 12, borderRadius: 8, background: s.colors.gray[50],
+                            border: `1px solid ${s.colors.gray[200]}`, borderLeft: `3px solid ${s.colors.primary}`,
+                          }}>
+                            <p style={{
+                              fontSize: 14, color: s.colors.gray[800], lineHeight: 1.6,
+                              margin: '0 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            }}>
+                              {note.content}
+                            </p>
+                            <span style={{ fontSize: 11, color: s.colors.gray[400] }}>
+                              {[note.date, note.time].filter(Boolean).join(' · ')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <DoctorInstructions instructions={doctorInstructions} />
+                </div>
+              )}
+
+              {activeTab === 'qa' && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={s.card}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: s.colors.gray[900], margin: '0 0 4px' }}>
+                      {isHindi ? '💬 डॉक्टर से सवाल-जवाब' : '💬 Q&A with your doctor'}
+                    </h3>
+                    <p style={{ fontSize: 12, color: s.colors.gray[500], margin: '0 0 14px' }}>
+                      {isHindi
+                        ? 'डॉक्टर के सवालों का यहाँ जवाब दें।'
+                        : 'Answer your doctor’s follow-up questions here.'}
+                    </p>
+                    <FollowUpThread
+                      followups={followups}
+                      sender="patient"
+                      patientId={savedPatientId}
+                      onSend={sendFollowupAnswer}
+                      lang={uiLang}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -556,6 +868,10 @@ export default function PatientPage() {
                 setActiveTab('assessment')
                 setDoctorInstructions(null)
                 setPrescriptions([])
+                setDoctorNotes([])
+                setFollowups([])
+                setSeenNotesCount(0)
+                setSeenFollowupsCount(0)
                 setSavedPatientId(null)
                 setReturnPatient(null)
                 setLookupPatientId('')
@@ -586,6 +902,18 @@ export default function PatientPage() {
           </div>
         </>
       )}
+
+      {/* Medical disclaimer — always visible. Builds trust and is the responsible
+          thing to show for an AI triage tool. */}
+      <div style={{
+        marginTop: 28, padding: '12px 14px', borderRadius: 10,
+        background: s.colors.gray[50], border: `1px solid ${s.colors.gray[200]}`,
+        fontSize: 11.5, lineHeight: 1.5, color: s.colors.gray[500], textAlign: 'center',
+      }}>
+        {isHindi
+          ? '⚕️ यह एक AI सहायक है, डॉक्टर का विकल्प नहीं। आपातकाल में तुरंत 108 पर कॉल करें।'
+          : '⚕️ This is an AI assistant, not a substitute for a doctor. In an emergency, call 108 immediately.'}
+      </div>
     </div>
   )
 }

@@ -1,12 +1,23 @@
 ﻿import json
 import os
+import uuid
 from datetime import datetime
-from fastapi import FastAPI, WebSocket, HTTPException
+
+# Load environment variables from backend/.env (e.g. GROQ_API_KEY) so the key is
+# picked up automatically on every run — no need to export it each time.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass  # dotenv optional; env vars can still be set the normal way
+
+from fastapi import FastAPI, WebSocket, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from triage import analyze_transcript
 from websocket import manager
+from demo_seed import demo_patients
 
 app = FastAPI(title="Sanjeevani Triage API")
 
@@ -23,6 +34,15 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 QUEUE_FILE = os.path.join(DATA_DIR, "queue.json")
 RX_FILE = os.path.join(DATA_DIR, "prescriptions.json")
+NOTES_FILE = os.path.join(DATA_DIR, "notes.json")
+FOLLOWUPS_FILE = os.path.join(DATA_DIR, "followups.json")
+
+# Patient-uploaded photos (rash/wound/report) live here and are served at /uploads
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGES = 3
 
 
 def _load(path, default):
@@ -43,6 +63,14 @@ def _save(path, data):
 
 patient_queue = _load(QUEUE_FILE, [])      # list of all queued patient records
 prescriptions_db = _load(RX_FILE, {})      # patientId -> list of prescriptions
+notes_db = _load(NOTES_FILE, {})           # patientId -> list of doctor notes
+followups_db = _load(FOLLOWUPS_FILE, {})   # patientId -> list of Q&A messages
+
+# Populate an empty queue with demo patients so the dashboard never looks dead on
+# first run (great for a live pitch). Real submissions simply add to this.
+if not patient_queue:
+    patient_queue = demo_patients()
+    _save(QUEUE_FILE, patient_queue)
 
 # ---- Hospital beds ----
 BEDS_FILE = os.path.join(DATA_DIR, "beds.json")
@@ -73,11 +101,13 @@ async def triage(request: dict):
     transcript = request.get("transcript", "").strip()
     patient_id = request.get("patientId", None)
     patient_name = request.get("patientName", "")
+    images = request.get("images") or []
+    lang = request.get("lang")  # patient's chosen UI language ('hi'|'en')
 
     if not transcript:
         raise HTTPException(status_code=400, detail="Transcript is required")
 
-    result = await analyze_transcript(transcript)
+    result = await analyze_transcript(transcript, pref_lang=lang)
 
     broadcast_data = {
         "type": "triage_result",
@@ -86,6 +116,7 @@ async def triage(request: dict):
         "queuedAt": datetime.now().isoformat(),
         "queueStatus": "WAITING",
         "patientName": patient_name,
+        "images": images if isinstance(images, list) else [],
         **result,
     }
     if patient_id:
@@ -166,6 +197,73 @@ async def add_prescription(patient_id: str, request: dict):
 async def get_prescriptions(patient_id: str):
     """Get all prescriptions for a patient."""
     return {"patientId": patient_id, "prescriptions": prescriptions_db.get(patient_id, [])}
+
+
+@app.post("/api/notes/{patient_id}")
+async def add_note(patient_id: str, request: dict):
+    """Doctor adds a clinical note for a patient. Broadcast so the patient sees it live."""
+    note = {
+        "content": request.get("content", ""),
+        "type": request.get("type", "consultation"),
+        "createdAt": datetime.now().isoformat(),
+        "date": datetime.now().strftime("%d %b %Y"),
+        "time": datetime.now().strftime("%I:%M %p"),
+    }
+    if patient_id not in notes_db:
+        notes_db[patient_id] = []
+    notes_db[patient_id].append(note)
+    _save(NOTES_FILE, notes_db)
+
+    # Broadcast real-time update to all clients (patient filters by patientId)
+    await manager.broadcast_json({
+        "type": "note_update",
+        "patientId": patient_id,
+        "notes": notes_db[patient_id],
+    })
+
+    return {"status": "saved", "patientId": patient_id, "count": len(notes_db[patient_id])}
+
+
+@app.get("/api/notes/{patient_id}")
+async def get_notes(patient_id: str):
+    """Get all doctor notes for a patient."""
+    return {"patientId": patient_id, "notes": notes_db.get(patient_id, [])}
+
+
+@app.post("/api/followups/{patient_id}")
+async def add_followup(patient_id: str, request: dict):
+    """Append a follow-up Q&A message (from doctor or patient) and broadcast it so
+    the other side sees it live. sender is 'doctor' or 'patient'."""
+    sender = request.get("sender", "doctor")
+    message = {
+        "sender": "patient" if sender == "patient" else "doctor",
+        "text": (request.get("text") or "").strip(),
+        "image": request.get("image") or "",  # optional /uploads/... URL
+        "createdAt": datetime.now().isoformat(),
+        "date": datetime.now().strftime("%d %b %Y"),
+        "time": datetime.now().strftime("%I:%M %p"),
+    }
+    if not message["text"] and not message["image"]:
+        raise HTTPException(status_code=400, detail="Message text or image is required")
+
+    if patient_id not in followups_db:
+        followups_db[patient_id] = []
+    followups_db[patient_id].append(message)
+    _save(FOLLOWUPS_FILE, followups_db)
+
+    await manager.broadcast_json({
+        "type": "followup_update",
+        "patientId": patient_id,
+        "followups": followups_db[patient_id],
+    })
+
+    return {"status": "saved", "patientId": patient_id, "count": len(followups_db[patient_id])}
+
+
+@app.get("/api/followups/{patient_id}")
+async def get_followups(patient_id: str):
+    """Get the follow-up Q&A thread for a patient."""
+    return {"patientId": patient_id, "followups": followups_db.get(patient_id, [])}
 
 
 @app.patch("/api/queue/{patient_id}/status")
@@ -274,10 +372,38 @@ async def discharge_bed(ward: str, request: dict):
     return _beds_view()
 
 
+@app.post("/api/images/{patient_id}")
+async def upload_images(patient_id: str, files: list[UploadFile] = File(...)):
+    """Patient uploads photos (rash/wound/report). Returns relative URLs to attach
+    to the triage record so the doctor sees them in the detail panel."""
+    if len(files) > MAX_IMAGES:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_IMAGES} images allowed")
+
+    safe_id = "".join(c for c in patient_id if c.isalnum() or c in ("-", "_")) or "patient"
+    urls = []
+    for idx, upload in enumerate(files):
+        if upload.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type: {upload.content_type}")
+        contents = await upload.read()
+        if len(contents) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=400, detail="Each image must be under 5MB")
+        ext = ALLOWED_IMAGE_TYPES[upload.content_type]
+        filename = f"{safe_id}-{idx}-{uuid.uuid4().hex[:8]}{ext}"
+        with open(os.path.join(UPLOADS_DIR, filename), "wb") as f:
+            f.write(contents)
+        urls.append(f"/uploads/{filename}")
+
+    return {"patientId": patient_id, "urls": urls}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "backend": "sanjeevani", "queue_count": len(patient_queue)}
 
+
+# Serve patient-uploaded images. Mounted BEFORE the catch-all "/" static mount
+# below so it isn't shadowed by it.
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # Serve frontend static files
 static_dir = Path(__file__).parent / "static"

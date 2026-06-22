@@ -6,6 +6,13 @@ export default function ImmediateGuidance({ result, lang = 'en' }) {
 
   const guidance = getGuidanceForResult(result, lang)
 
+  // Prefer the AI-generated, condition-specific care advice from the API. Fall back
+  // to the hardcoded risk-based steps only if the API returned nothing (e.g. offline).
+  const apiAdvice = Array.isArray(result.care_advice)
+    ? result.care_advice.filter((a) => a && String(a).trim())
+    : []
+  const steps = apiAdvice.length > 0 ? apiAdvice : guidance.specificActions
+
   return (
     <div style={{
       padding: 16,
@@ -35,7 +42,7 @@ export default function ImmediateGuidance({ result, lang = 'en' }) {
         fontSize: 13,
         lineHeight: 1.6,
       }}>
-        {guidance.specificActions.map((action, idx) => (
+        {steps.map((action, idx) => (
           <li key={idx} style={{ marginBottom: 8 }}>
             {action}
           </li>

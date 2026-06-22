@@ -1,6 +1,6 @@
 import React from 'react'
 
-export default function EmergencyAlert({ patient }) {
+export default function EmergencyAlert({ patient, onDismiss }) {
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, padding: '14px 20px',
@@ -13,7 +13,20 @@ export default function EmergencyAlert({ patient }) {
           <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
         <span style={{ fontWeight: 700, fontSize: 15 }}>CRITICAL PATIENT INCOMING</span>
-        <span style={{ fontSize: 13, opacity: 0.9, marginLeft: 'auto' }}>{patient.symptoms?.join(', ')}</span>
+        <span style={{ fontSize: 13, opacity: 0.9 }}>{patient.symptoms?.join(', ')}</span>
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            aria-label="Dismiss alert"
+            style={{
+              marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', border: 'none',
+              color: 'white', fontSize: 16, fontWeight: 700, lineHeight: 1,
+              width: 28, height: 28, borderRadius: 6, cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
     </div>
   )

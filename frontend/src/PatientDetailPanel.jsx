@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { RISK_COLORS } from './styles'
+import FollowUpThread from './FollowUpThread'
 
 const STATUS_COLORS = {
   WAITING:    { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
@@ -10,7 +11,9 @@ const STATUS_COLORS = {
 
 export default function PatientDetailPanel({ patient, onClose, onQuickAction, onDischarge }) {
   const [prescriptions, setPrescriptions] = useState([])
+  const [followups, setFollowups] = useState([])
   const [status, setStatus] = useState(patient?.queueStatus || 'WAITING')
+  const [statusError, setStatusError] = useState(false)
 
   useEffect(() => {
     if (!patient?.patientId) return
@@ -21,16 +24,48 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
       .catch(() => {})
   }, [patient?.patientId])
 
+  // Load + poll the follow-up Q&A thread so the doctor sees patient replies live.
+  useEffect(() => {
+    if (!patient?.patientId) return
+    let cancelled = false
+    const fetchThread = () => {
+      fetch(`/api/followups/${patient.patientId}`)
+        .then(r => r.json())
+        .then(d => { if (!cancelled) setFollowups(d.followups || []) })
+        .catch(() => {})
+    }
+    fetchThread()
+    const id = setInterval(fetchThread, 4000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [patient?.patientId])
+
+  const sendFollowup = async (text, image = '') => {
+    if (!patient?.patientId) return
+    // optimistic append
+    setFollowups(prev => [...prev, { sender: 'doctor', text, image, time: '' }])
+    try {
+      await fetch(`/api/followups/${patient.patientId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: 'doctor', text, image }),
+      })
+    } catch {}
+  }
+
   const handleStatusChange = async (newStatus) => {
     if (!patient?.patientId) return
     setStatus(newStatus)
+    setStatusError(false)
     try {
-      await fetch(`/api/queue/${patient.patientId}/status`, {
+      const res = await fetch(`/api/queue/${patient.patientId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
-    } catch {}
+      if (!res.ok) throw new Error('status update failed')
+    } catch {
+      setStatusError(true)
+    }
   }
 
   if (!patient) return null
@@ -122,6 +157,11 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
                 )
               })}
             </div>
+            {statusError && (
+              <p style={{ fontSize: 11, color: '#DC2626', margin: '6px 0 0' }}>
+                ⚠️ Couldn't save status to the server — will retry on reconnect.
+              </p>
+            )}
           </div>
         </div>
 
@@ -201,6 +241,34 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
           </div>
         )}
 
+        {/* Attached Photos */}
+        {Array.isArray(patient.images) && patient.images.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>
+              📷 Attached Photos ({patient.images.length})
+            </h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {patient.images.map((url, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => window.open(url, '_blank')}
+                  title="Open full image"
+                  style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+                >
+                  <img
+                    src={url}
+                    alt={`patient photo ${idx + 1}`}
+                    style={{
+                      width: 84, height: 84, objectFit: 'cover', borderRadius: 8,
+                      border: '1px solid #E5E7EB',
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Medical Summary */}
         {patient.medical_summary && (
           <div style={{ marginBottom: 16 }}>
@@ -268,6 +336,32 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
             </p>
           </div>
         )}
+
+        {/* AI Care Advice (condition-specific, shown to the patient too) */}
+        {Array.isArray(patient.care_advice) && patient.care_advice.length > 0 && (
+          <div>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>
+              AI Care Advice (shown to patient)
+            </h3>
+            <ul style={{
+              fontSize: 12, color: '#6B7280', lineHeight: 1.6, margin: 0,
+              padding: '10px 10px 10px 26px', background: '#F0FDFA',
+              borderRadius: 6, borderLeft: '3px solid #0F766E',
+            }}>
+              {patient.care_advice.map((step, idx) => (
+                <li key={idx}>{step}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Follow-up Q&A with the patient */}
+        <div>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>
+            💬 Follow-up Questions
+          </h3>
+          <FollowUpThread followups={followups} sender="doctor" patientId={patient.patientId} onSend={sendFollowup} lang="en" />
+        </div>
 
         {/* Prescription History */}
         {prescriptions.length > 0 && (

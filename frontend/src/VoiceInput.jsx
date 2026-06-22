@@ -1,12 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { s } from './styles'
 
-export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
+export default function VoiceInput({ onTranscriptReady, lang = 'en', submitting = false }) {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [interim, setInterim] = useState('')
   const [supported, setSupported] = useState(true)
   const [error, setError] = useState('')
+  // Soft, non-alarming hint (e.g. nothing was heard) — distinct from hard errors.
+  const [notice, setNotice] = useState('')
   const recognitionRef = useRef(null)
   // Keep a ref so toggleListening always reads the latest lang without needing the effect to re-run
   const langRef = useRef(lang)
@@ -39,7 +41,12 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
         setError('Microphone access denied. Check browser permissions.')
       } else if (e.error === 'service-not-allowed' || e.error === 'network') {
         setError('Speech recognition blocked. If using Brave, enable it at brave://settings/privacy or switch to Chrome.')
-      } else if (e.error !== 'no-speech') {
+      } else if (e.error === 'no-speech') {
+        // Common when the user pauses or the mic hears nothing — guide, don't alarm.
+        setNotice(langRef.current === 'hi'
+          ? 'कुछ सुनाई नहीं दिया — माइक दबाकर दोबारा बोलें।'
+          : "Didn't catch that — tap the mic and try speaking again.")
+      } else {
         setError('Speech error: ' + e.error)
       }
       setIsListening(false)
@@ -49,8 +56,9 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
   }, [])
 
   const toggleListening = useCallback(async () => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current || submitting) return
     setError('')
+    setNotice('')
     if (isListening) {
       recognitionRef.current.stop()
     } else {
@@ -71,9 +79,10 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
         setError('Could not start speech recognition. Try Chrome instead of Brave.')
       }
     }
-  }, [isListening])
+  }, [isListening, submitting])
 
   const handleSubmit = () => {
+    if (submitting) return // guard against double-tap while a triage is in flight
     const full = (transcript + interim).trim()
     if (full && onTranscriptReady) onTranscriptReady(full)
   }
@@ -94,11 +103,13 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
           rows={4}
         />
         <button
-          style={{ ...s.submitBtn, marginTop: 12, opacity: transcript.trim() ? 1 : 0.4 }}
-          disabled={!transcript.trim()}
+          style={{ ...s.submitBtn, marginTop: 12, opacity: (transcript.trim() && !submitting) ? 1 : 0.4 }}
+          disabled={!transcript.trim() || submitting}
           onClick={handleSubmit}
         >
-          {isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze symptoms'}
+          {submitting
+            ? (isHindi ? 'विश्लेषण हो रहा है...' : 'Analyzing...')
+            : (isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze symptoms')}
         </button>
       </div>
     )
@@ -161,6 +172,16 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
           fontSize: 13, lineHeight: 1.5,
         }}>
           {error}
+        </div>
+      )}
+
+      {notice && !error && (
+        <div style={{
+          width: '100%', padding: '10px 14px', borderRadius: 8,
+          background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E',
+          fontSize: 13, lineHeight: 1.5,
+        }}>
+          {notice}
         </div>
       )}
 
@@ -255,8 +276,12 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
             ...s.submitBtn,
             background: `linear-gradient(135deg, ${s.colors.primary} 0%, ${s.colors.primaryLight} 100%)`,
             marginTop: 12,
+            opacity: submitting ? 0.6 : 1,
+            cursor: submitting ? 'default' : 'pointer',
           }}
+          disabled={submitting}
           onMouseOver={(e) => {
+            if (submitting) return
             e.target.style.boxShadow = `0 8px 16px rgba(15, 118, 110, 0.35)`
             e.target.style.transform = 'translateY(-2px)'
           }}
@@ -266,7 +291,9 @@ export default function VoiceInput({ onTranscriptReady, lang = 'en' }) {
           }}
           onClick={handleSubmit}
         >
-          {isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze Symptoms'}
+          {submitting
+            ? (isHindi ? 'विश्लेषण हो रहा है...' : 'Analyzing...')
+            : (isHindi ? 'लक्षण विश्लेषण करें' : 'Analyze Symptoms')}
         </button>
       )}
     </div>
