@@ -45,7 +45,14 @@
       "PowerShell(if \\($env:GROQ_API_KEY\\) { Write-Output \"ENV VAR SET: $\\($env:GROQ_API_KEY.Substring\\(0,[Math]::Min\\(8,$env:GROQ_API_KEY.Length\\)\\)\\)... \\(len=$\\($env:GROQ_API_KEY.Length\\)\\)\" } else { Write-Output \"GROQ_API_KEY not set in environment\" })",
       "Bash(python -c ' *)",
       "Bash(python -m py_compile triage.py)",
-      "Bash(python -m py_compile triage.py main.py)"
+      "Bash(python -m py_compile triage.py main.py)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git rebase *)",
+      "Bash(git stash *)",
+      "Bash(git reset *)",
+      "Bash(git commit *)"
     ]
   }
 }
