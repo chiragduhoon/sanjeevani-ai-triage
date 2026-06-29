@@ -1,5 +1,4 @@
 import { apiUrl } from './api.js'
-import { apiUrl } from './api.js'
 import React, { useState, useEffect } from 'react'
 import DoctorLogin from './DoctorLogin'
 import DoctorDashboard from './DoctorDashboard'
