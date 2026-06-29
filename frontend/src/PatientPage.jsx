@@ -132,7 +132,7 @@ export default function PatientPage() {
     let cancelled = false
     const fetchUpdates = async () => {
       try {
-        const res = await fetch(apiUrl(`/api/prescriptions/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/prescriptions/${savedPatientId}`))
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.prescriptions) {
@@ -143,7 +143,7 @@ export default function PatientPage() {
         }
       } catch {}
       try {
-        const res = await fetch(apiUrl(`/api/notes/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/notes/${savedPatientId}`))
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.notes) {
@@ -154,7 +154,7 @@ export default function PatientPage() {
         }
       } catch {}
       try {
-        const res = await fetch(apiUrl(`/api/followups/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/followups/${savedPatientId}`))
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.followups) {
@@ -402,7 +402,7 @@ export default function PatientPage() {
                   // (doctor may have prescribed from another device/browser)
                   let backendRx = []
                   try {
-                    const res = await fetch(apiUrl(`/api/prescriptions/${id}`)
+                    const res = await fetch(apiUrl(`/api/prescriptions/${id}`))
                     if (res.ok) backendRx = (await res.json()).prescriptions || []
                   } catch {}
 
