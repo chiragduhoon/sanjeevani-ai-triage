@@ -106,7 +106,7 @@ The tradeoff is scale: replaying the full queue on every connect is O(n) in queu
 ## Setup
 
 ```bash
-git clone https://github.com/chiragduhoon/sanjeevani.git
+git clone https://github.com/chiragduhoon/sanjeevani-ai-triage.git
 cd sanjeevani/backend
 pip install -r requirements.txt
 export GROQ_API_KEY=your_key   # optional; falls back to keyword triage without it
