@@ -46,7 +46,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     // optimistic append
     setFollowups(prev => [...prev, { sender: 'doctor', text, image, time: '' }])
     try {
-      await fetch(apiUrl(`/api/followups/${patient.patientId}`, {
+      await fetch(apiUrl(`/api/followups/${patient.patientId}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender: 'doctor', text, image }),

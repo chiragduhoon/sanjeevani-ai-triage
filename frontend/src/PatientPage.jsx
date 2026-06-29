@@ -71,7 +71,7 @@ export default function PatientPage() {
     if (!savedPatientId) return
     setFollowups((prev) => [...prev, { sender: 'patient', text, image, time: '' }])
     try {
-      await fetch(apiUrl(`/api/followups/${savedPatientId}`, {
+      await fetch(apiUrl(`/api/followups/${savedPatientId}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender: 'patient', text, image }),
@@ -189,7 +189,7 @@ export default function PatientPage() {
         try {
           const form = new FormData()
           images.forEach((img) => form.append('files', img.file))
-          const up = await fetch(apiUrl(`/api/images/${patientId}`, { method: 'POST', body: form })
+          const up = await fetch(apiUrl(`/api/images/${patientId}`), { method: 'POST', body: form })
           if (up.ok) {
             const upData = await up.json()
             imageUrls = upData.urls || []
