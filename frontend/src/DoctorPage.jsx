@@ -1,3 +1,5 @@
+import { apiUrl } from './api.js'
+import { apiUrl } from './api.js'
 import React, { useState, useEffect } from 'react'
 import DoctorLogin from './DoctorLogin'
 import DoctorDashboard from './DoctorDashboard'
@@ -130,12 +132,12 @@ export default function DoctorPage() {
         })
       }
       // Update backend status, then remove from backend queue
-      await fetch(`/api/queue/${id}/status`, {
+      await fetch(apiUrl(`/api/queue/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'DISCHARGED' }),
       })
-      await fetch(`/api/queue/${id}`, { method: 'DELETE' })
+      await fetch(apiUrl(`/api/queue/${id}`, { method: 'DELETE' })
     } catch (err) {
       console.error('Discharge backend update failed:', err)
       setActionError('Discharge may not have saved on the server — check the connection. It will sync when reconnected.')
@@ -418,7 +420,7 @@ export default function DoctorPage() {
                   savePrescriptions(selectedPatient.patientId, updated)
                   try {
                     // Save to backend (broadcasts real-time to the patient's tab)
-                    const res = await fetch(`/api/prescriptions/${selectedPatient.patientId}`, {
+                    const res = await fetch(apiUrl(`/api/prescriptions/${selectedPatient.patientId}`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(rx),
@@ -562,7 +564,7 @@ export default function DoctorPage() {
                       const allNotes = existingNotes + (existingNotes ? '\n\n' : '') + note.content
                       savePatientNotes(selectedPatient.patientId, allNotes)
                       // Push to the backend so the patient's device sees it live.
-                      fetch(`/api/notes/${selectedPatient.patientId}`, {
+                      fetch(apiUrl(`/api/notes/${selectedPatient.patientId}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ content: note.content, type: note.type }),

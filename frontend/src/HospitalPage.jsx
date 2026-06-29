@@ -1,3 +1,5 @@
+import { apiUrl } from './api.js'
+import { apiUrl } from './api.js'
 import React, { useState, useEffect } from 'react'
 import { connectDoctorSocket } from './realtime'
 import { s } from './styles'
@@ -85,7 +87,7 @@ export default function HospitalPage() {
 
   const loadBeds = async () => {
     try {
-      const res = await fetch('/api/beds')
+      const res = await fetch(apiUrl('/api/beds')
       if (res.ok) setBeds(await res.json())
     } catch {}
   }

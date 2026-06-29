@@ -1,3 +1,5 @@
+import { apiUrl } from './api.js'
+import { apiUrl } from './api.js'
 import React, { useState, useEffect } from 'react'
 import { RISK_COLORS } from './styles'
 import FollowUpThread from './FollowUpThread'
@@ -18,7 +20,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
   useEffect(() => {
     if (!patient?.patientId) return
     // Load prescriptions from backend
-    fetch(`/api/prescriptions/${patient.patientId}`)
+    fetch(apiUrl(`/api/prescriptions/${patient.patientId}`)
       .then(r => r.json())
       .then(d => setPrescriptions(d.prescriptions || []))
       .catch(() => {})
@@ -29,7 +31,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     if (!patient?.patientId) return
     let cancelled = false
     const fetchThread = () => {
-      fetch(`/api/followups/${patient.patientId}`)
+      fetch(apiUrl(`/api/followups/${patient.patientId}`)
         .then(r => r.json())
         .then(d => { if (!cancelled) setFollowups(d.followups || []) })
         .catch(() => {})
@@ -44,7 +46,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     // optimistic append
     setFollowups(prev => [...prev, { sender: 'doctor', text, image, time: '' }])
     try {
-      await fetch(`/api/followups/${patient.patientId}`, {
+      await fetch(apiUrl(`/api/followups/${patient.patientId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender: 'doctor', text, image }),
@@ -57,7 +59,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     setStatus(newStatus)
     setStatusError(false)
     try {
-      const res = await fetch(`/api/queue/${patient.patientId}/status`, {
+      const res = await fetch(apiUrl(`/api/queue/${patient.patientId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),

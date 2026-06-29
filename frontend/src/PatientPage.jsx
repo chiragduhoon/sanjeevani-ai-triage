@@ -3,6 +3,7 @@ import VoiceInput from './VoiceInput'
 import FollowUpThread from './FollowUpThread'
 import TriageResult from './TriageResult'
 import AmbulanceButton from './AmbulanceButton'
+import { apiUrl } from './api.js'
 import ImmediateGuidance from './ImmediateGuidance'
 import AppointmentBooking from './AppointmentBooking'
 import BedAvailability from './BedAvailability'
@@ -70,7 +71,7 @@ export default function PatientPage() {
     if (!savedPatientId) return
     setFollowups((prev) => [...prev, { sender: 'patient', text, image, time: '' }])
     try {
-      await fetch(`/api/followups/${savedPatientId}`, {
+      await fetch(apiUrl(`/api/followups/${savedPatientId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender: 'patient', text, image }),
@@ -131,7 +132,7 @@ export default function PatientPage() {
     let cancelled = false
     const fetchUpdates = async () => {
       try {
-        const res = await fetch(`/api/prescriptions/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/prescriptions/${savedPatientId}`)
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.prescriptions) {
@@ -142,7 +143,7 @@ export default function PatientPage() {
         }
       } catch {}
       try {
-        const res = await fetch(`/api/notes/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/notes/${savedPatientId}`)
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.notes) {
@@ -153,7 +154,7 @@ export default function PatientPage() {
         }
       } catch {}
       try {
-        const res = await fetch(`/api/followups/${savedPatientId}`)
+        const res = await fetch(apiUrl(`/api/followups/${savedPatientId}`)
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.followups) {
@@ -188,7 +189,7 @@ export default function PatientPage() {
         try {
           const form = new FormData()
           images.forEach((img) => form.append('files', img.file))
-          const up = await fetch(`/api/images/${patientId}`, { method: 'POST', body: form })
+          const up = await fetch(apiUrl(`/api/images/${patientId}`, { method: 'POST', body: form })
           if (up.ok) {
             const upData = await up.json()
             imageUrls = upData.urls || []
@@ -199,7 +200,7 @@ export default function PatientPage() {
         }
       }
 
-      const res = await fetch('/triage', {
+      const res = await fetch(apiUrl('/triage'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -401,7 +402,7 @@ export default function PatientPage() {
                   // (doctor may have prescribed from another device/browser)
                   let backendRx = []
                   try {
-                    const res = await fetch(`/api/prescriptions/${id}`)
+                    const res = await fetch(apiUrl(`/api/prescriptions/${id}`)
                     if (res.ok) backendRx = (await res.json()).prescriptions || []
                   } catch {}
 
