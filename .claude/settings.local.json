@@ -50,9 +50,7 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(git rebase *)",
-      "Bash(git stash *)",
-      "Bash(git reset *)",
-      "Bash(git commit *)"
+      "Bash(git stash *)"
     ]
   }
 }
