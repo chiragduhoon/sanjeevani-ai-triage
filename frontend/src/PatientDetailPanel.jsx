@@ -19,7 +19,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
   useEffect(() => {
     if (!patient?.patientId) return
     // Load prescriptions from backend
-    fetch(apiUrl(`/api/prescriptions/${patient.patientId}`)
+    fetch(apiUrl(`/api/prescriptions/${patient.patientId}`))
       .then(r => r.json())
       .then(d => setPrescriptions(d.prescriptions || []))
       .catch(() => {})
@@ -30,7 +30,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     if (!patient?.patientId) return
     let cancelled = false
     const fetchThread = () => {
-      fetch(apiUrl(`/api/followups/${patient.patientId}`)
+      fetch(apiUrl(`/api/followups/${patient.patientId}`))
         .then(r => r.json())
         .then(d => { if (!cancelled) setFollowups(d.followups || []) })
         .catch(() => {})
