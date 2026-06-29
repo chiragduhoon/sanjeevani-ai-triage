@@ -1,5 +1,4 @@
 import { apiUrl } from './api.js'
-import { apiUrl } from './api.js'
 import React, { useState, useRef } from 'react'
 import { s } from './styles'
 
