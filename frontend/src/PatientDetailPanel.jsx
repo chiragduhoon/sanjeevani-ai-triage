@@ -59,7 +59,7 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
     setStatus(newStatus)
     setStatusError(false)
     try {
-      const res = await fetch(apiUrl(`/api/queue/${patient.patientId}/status`, {
+      const res = await fetch(apiUrl(`/api/queue/${patient.patientId}/status`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),

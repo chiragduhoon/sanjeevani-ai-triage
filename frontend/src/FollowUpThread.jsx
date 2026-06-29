@@ -37,7 +37,7 @@ export default function FollowUpThread({ followups = [], sender, patientId, onSe
       try {
         const form = new FormData()
         form.append('files', pending.file)
-        const res = await fetch(apiUrl(`/api/images/${patientId}`, { method: 'POST', body: form })
+        const res = await fetch(apiUrl(`/api/images/${patientId}`), { method: 'POST', body: form })
         if (res.ok) imageUrl = ((await res.json()).urls || [])[0] || ''
       } catch {}
       setUploading(false)

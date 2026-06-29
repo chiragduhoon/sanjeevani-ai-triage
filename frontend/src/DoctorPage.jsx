@@ -131,7 +131,7 @@ export default function DoctorPage() {
         })
       }
       // Update backend status, then remove from backend queue
-      await fetch(apiUrl(`/api/queue/${id}/status`, {
+      await fetch(apiUrl(`/api/queue/${id}/status`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'DISCHARGED' }),
