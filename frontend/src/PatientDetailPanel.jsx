@@ -2,6 +2,7 @@ import { apiUrl } from './api.js'
 import React, { useState, useEffect } from 'react'
 import { RISK_COLORS } from './styles'
 import FollowUpThread from './FollowUpThread'
+import PrescriptionScanner from './PrescriptionScanner'
 
 const STATUS_COLORS = {
   WAITING:    { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
@@ -16,14 +17,16 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
   const [status, setStatus] = useState(patient?.queueStatus || 'WAITING')
   const [statusError, setStatusError] = useState(false)
 
-  useEffect(() => {
+  const loadPrescriptions = () => {
     if (!patient?.patientId) return
-    // Load prescriptions from backend
     fetch(apiUrl(`/api/prescriptions/${patient.patientId}`))
       .then(r => r.json())
       .then(d => setPrescriptions(d.prescriptions || []))
       .catch(() => {})
-  }, [patient?.patientId])
+  }
+
+  // Load prescriptions from backend
+  useEffect(loadPrescriptions, [patient?.patientId])
 
   // Load + poll the follow-up Q&A thread so the doctor sees patient replies live.
   useEffect(() => {
@@ -387,6 +390,11 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
             </div>
           </div>
         )}
+
+        {/* Scan a paper prescription the patient brought in */}
+        <div style={{ marginBottom: 16 }}>
+          <PrescriptionScanner patientId={patient.patientId} lang="en" onSaved={loadPrescriptions} />
+        </div>
 
         {/* Action Buttons */}
         {onQuickAction && (

@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from triage import analyze_transcript
+from prescription_extract import extract_prescription
 from websocket import manager
 from demo_seed import demo_patients
 
@@ -166,6 +167,21 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         manager.disconnect(websocket)
         print(f"Doctor disconnected. Total: {len(manager.active_connections)}")
+
+
+# NOTE: must be registered BEFORE /api/prescriptions/{patient_id} — FastAPI matches
+# routes in order, and the dynamic route would otherwise capture "extract" as an id.
+@app.post("/api/prescriptions/extract")
+async def extract_prescription_image(file: UploadFile = File(...)):
+    """Extract structured prescription data from an uploaded photo via a vision LLM.
+    Provider failures return HTTP 200 with success=false so the frontend can offer
+    manual entry; only invalid uploads are 400s."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="Image must be under 5MB")
+    return await extract_prescription(contents, file.content_type)
 
 
 @app.post("/api/prescriptions/{patient_id}")

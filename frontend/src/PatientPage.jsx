@@ -9,6 +9,7 @@ import AppointmentBooking from './AppointmentBooking'
 import BedAvailability from './BedAvailability'
 import DoctorInstructions from './DoctorInstructions'
 import PrescriptionsList from './PrescriptionsList'
+import PrescriptionScanner from './PrescriptionScanner'
 import { generatePatientId, savePatientHistory, getPatientById } from './patientHistoryStorage'
 import { connectDoctorSocket } from './realtime'
 import { RISK_COLORS, s } from './styles'
@@ -845,6 +846,19 @@ export default function PatientPage() {
 
               {activeTab === 'prescriptions' && (
                 <div style={{ marginTop: 16 }}>
+                  <PrescriptionScanner
+                    patientId={savedPatientId}
+                    lang={uiLang}
+                    onSaved={async () => {
+                      try {
+                        const res = await fetch(apiUrl(`/api/prescriptions/${savedPatientId}`))
+                        if (res.ok) {
+                          const data = await res.json()
+                          setPrescriptions(data.prescriptions || [])
+                        }
+                      } catch { /* polling will pick it up */ }
+                    }}
+                  />
                   {prescriptions.length === 0 && (
                     <div style={{
                       padding: 12, borderRadius: 8, background: '#FFF7ED',
