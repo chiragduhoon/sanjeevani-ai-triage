@@ -105,22 +105,52 @@ The tradeoff is scale: replaying the full queue on every connect is O(n) in queu
 
 ## Setup
 
+### Option 1 — Docker (one command)
+
 ```bash
 git clone https://github.com/chiragduhoon/sanjeevani-ai-triage.git
-cd sanjeevani/backend
+cd sanjeevani-ai-triage
+docker compose up              # backend at :8000, frontend at :5173
+```
+
+Optionally set `GROQ_API_KEY` and/or `OPENROUTER_API_KEY` in your shell (or a
+`.env` file next to `docker-compose.yml`) to enable LLM triage — without a
+key, triage runs in keyword demo mode.
+
+### Option 2 — Run locally
+
+```bash
+git clone https://github.com/chiragduhoon/sanjeevani-ai-triage.git
+cd sanjeevani-ai-triage/backend
 pip install -r requirements.txt
-export GROQ_API_KEY=your_key   # optional; falls back to keyword triage without it
+cp .env.example .env           # optional: add a GROQ or OPENROUTER key;
+                               # without one, triage falls back to keyword demo mode
 python main.py                 # backend at http://localhost:8000
 ```
 
 In a second terminal:
 
 ```bash
-cd sanjeevani/frontend
+cd sanjeevani-ai-triage/frontend
 npm install && npm run dev     # frontend at http://localhost:5173
 ```
 
 Open `http://localhost:5173` (patient view) and `http://localhost:5173/doctor` (doctor dashboard) in separate tabs.
+
+---
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) to get
+started. The **Known Limitations** above double as a roadmap; issues labeled
+[`good first issue`](https://github.com/chiragduhoon/sanjeevani-ai-triage/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+are a great entry point.
+
+---
+
+## License
+
+Distributed under the MIT License — see [LICENSE](./LICENSE).
 
 ---
 
