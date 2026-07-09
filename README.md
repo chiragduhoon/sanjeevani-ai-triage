@@ -20,6 +20,14 @@ Beyond triage, patients can photograph a paper prescription and have a vision LL
 
 ![Triage result](docs/patient-result.png)
 
+**Prescription scan — vision LLM extracts medicines from a photo of a handwritten prescription**
+
+![Prescription scan](docs/prescription-scan.png)
+
+**Prescription insights — AI explains the likely illness and what each medicine helped with**
+
+![Prescription insights](docs/prescription-insights.png)
+
 **Doctor dashboard — live queue with patient detail panel, AI care advice in Hindi**
 
 ![Doctor dashboard](docs/doctor-queue.png)
