@@ -40,9 +40,11 @@ Patient (browser)
     | POST /triage  (REST)
     v
 FastAPI (backend/main.py)
-    |-- triage.py        LLM provider chain + keyword fallback
-    |-- websocket.py     ConnectionManager (broadcast + queue replay)
-    |-- data/            JSON persistence (queue, prescriptions, notes, followups)
+    |-- triage.py                 LLM provider chain + keyword fallback
+    |-- prescription_extract.py   Vision-LLM prescription photo -> structured medicines
+    |-- prescription_insights.py  Past prescription -> likely illness + what each medicine helped with
+    |-- websocket.py              ConnectionManager (broadcast + queue replay)
+    |-- data/                     JSON persistence (queue, prescriptions, notes, followups)
     |
     | WebSocket /ws/doctor
     v
@@ -50,6 +52,8 @@ Doctor Dashboard (browser)
 ```
 
 **Triage flow.** `POST /triage` accepts a free-text transcript. `analyze_transcript()` in `triage.py` tries providers in order: Groq (llama-3.3-70b) → OpenRouter (free model pool) → keyword-based fallback. The keyword fallback is not a last resort that silently degrades; it runs a negation-aware substring scan with Hindi/Hinglish/Devanagari patterns and is accurate enough to be the primary path in no-key environments. A safety net always runs: if the keyword detector flags an emergency the LLM missed, the result is escalated to CRITICAL. The response is appended to the in-memory queue, written to disk, and broadcast to all connected doctor clients over WebSocket.
+
+**Prescription scan + insights.** Patients can photograph a paper prescription; `POST /api/prescriptions/extract` sends it to a vision LLM (`prescription_extract.py`) which returns structured medicines the patient reviews and saves — there is deliberately no keyword fallback here, since inventing prescription data would be unsafe. On top of any saved or previous prescription, `POST /api/prescriptions/{patient_id}/explain` (`prescription_insights.py`) asks a text LLM to explain in plain Hindi or English what illness the prescription was most likely treating and what each medicine helped with. Explanations are grounded: medicines the model invents are dropped, medicines it skips get an entry from a built-in knowledge base of common Indian medicines, and that same knowledge base serves as the full offline fallback when no API key is set — unknown drugs are honestly labeled "ask your doctor" rather than guessed.
 
 **WebSocket queue replay.** When a doctor client connects to `/ws/doctor`, the server immediately streams the full current queue before the client enters the live event loop. This means a doctor who refreshes their tab or opens a second monitor gets a consistent view of all patients queued since server start, not just patients who arrived after their connection. The implementation is in `main.py` lines 152–157.
 

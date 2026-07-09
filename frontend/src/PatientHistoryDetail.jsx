@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { RISK_COLORS } from './styles'
+import PrescriptionInsights from './PrescriptionInsights'
 import {
   updatePatientDetails,
   savePatientNotes,
@@ -328,6 +329,12 @@ export default function PatientHistoryDetail({ patient, onClose }) {
                   </p>
                 </div>
               ))}
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <PrescriptionInsights
+                patientId={patient.patientId}
+                prescriptions={patient.prescriptions}
+              />
             </div>
           </div>
         )}

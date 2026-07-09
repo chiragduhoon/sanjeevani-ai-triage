@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from triage import analyze_transcript
 from prescription_extract import extract_prescription
+from prescription_insights import explain_prescriptions
 from websocket import manager
 from demo_seed import demo_patients
 
@@ -182,6 +183,24 @@ async def extract_prescription_image(file: UploadFile = File(...)):
     if len(contents) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="Image must be under 5MB")
     return await extract_prescription(contents, file.content_type)
+
+
+@app.post("/api/prescriptions/{patient_id}/explain")
+async def explain_patient_prescriptions(patient_id: str, request: dict):
+    """AI insight on a patient's past prescriptions: what illness they were likely
+    treating and what each medicine helped with. The client may send its own
+    prescription list (e.g. records held in localStorage); otherwise the
+    server-side store for that patient is used."""
+    lang = request.get("lang")
+    prescriptions = request.get("prescriptions")
+    if not isinstance(prescriptions, list) or not prescriptions:
+        prescriptions = prescriptions_db.get(patient_id, [])
+    if not prescriptions:
+        raise HTTPException(status_code=404, detail="No prescriptions found for this patient")
+    result = await explain_prescriptions(prescriptions, lang=lang)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail="No readable medicines in these prescriptions")
+    return result
 
 
 @app.post("/api/prescriptions/{patient_id}")

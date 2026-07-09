@@ -10,6 +10,7 @@ import BedAvailability from './BedAvailability'
 import DoctorInstructions from './DoctorInstructions'
 import PrescriptionsList from './PrescriptionsList'
 import PrescriptionScanner from './PrescriptionScanner'
+import PrescriptionInsights from './PrescriptionInsights'
 import { generatePatientId, savePatientHistory, getPatientById } from './patientHistoryStorage'
 import { connectDoctorSocket } from './realtime'
 import { RISK_COLORS, s } from './styles'
@@ -634,6 +635,11 @@ export default function PatientPage() {
           {returnPatient.prescriptions && returnPatient.prescriptions.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <PrescriptionsList prescriptions={returnPatient.prescriptions} />
+              <PrescriptionInsights
+                patientId={returnPatient.patientId}
+                prescriptions={returnPatient.prescriptions}
+                lang={uiLang}
+              />
             </div>
           )}
         </>
@@ -870,6 +876,11 @@ export default function PatientPage() {
                     </div>
                   )}
                   <PrescriptionsList prescriptions={prescriptions} />
+                  <PrescriptionInsights
+                    patientId={savedPatientId}
+                    prescriptions={prescriptions}
+                    lang={uiLang}
+                  />
                 </div>
               )}
             </>
