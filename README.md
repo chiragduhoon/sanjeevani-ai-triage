@@ -2,6 +2,8 @@
 
 Emergency departments in India routinely triage patients at the front desk using verbal intake with no structured risk scoring. The result is that critical patients can wait behind lower-priority cases, and doctors receive no alert until the patient reaches them. Sanjeevani is a prototype that replaces that verbal intake step with a structured AI triage loop: patients describe symptoms by voice or text, the system classifies risk, queues the patient, and pushes real-time alerts to a doctor dashboard — with critical cases surfaced to the top.
 
+Beyond triage, patients can photograph a paper prescription and have a vision LLM extract the medicines into structured records — and for any saved or previous prescription, ask the AI what illness it was likely treating and what each medicine helped with, explained in plain Hindi or English.
+
 ---
 
 ## Screenshots
@@ -87,7 +89,9 @@ The tradeoff is scale: replaying the full queue on every connect is O(n) in queu
 | Backend | FastAPI, Python 3.11+ |
 | LLM (primary) | Groq — llama-3.3-70b-versatile |
 | LLM (fallback) | OpenRouter free model pool |
+| LLM (vision, prescription scan) | Groq — llama-4-scout; OpenRouter vision pool as backup |
 | Triage fallback | Keyword matching (English, Hindi, Hinglish, Devanagari) |
+| Prescription-insights fallback | Built-in knowledge base of common Indian medicines |
 | Persistence | In-memory + JSON files |
 | Real-time | WebSocket (FastAPI native) |
 
@@ -99,7 +103,7 @@ The tradeoff is scale: replaying the full queue on every connect is O(n) in queu
 
 **Appointments are mock.** The appointment booking UI generates a confirmation number client-side. No backend stores or validates appointment slots.
 
-**Triage quality degrades without an API key.** Without `GROQ_API_KEY` or `OPENROUTER_API_KEY`, triage falls back to keyword matching. The keyword list covers common Hindi/Hinglish patterns and includes negation detection, but it cannot reason about symptom combinations or context the way an LLM can.
+**Triage quality degrades without an API key.** Without `GROQ_API_KEY` or `OPENROUTER_API_KEY`, triage falls back to keyword matching. The keyword list covers common Hindi/Hinglish patterns and includes negation detection, but it cannot reason about symptom combinations or context the way an LLM can. Prescription scanning has no offline fallback at all (the photo form switches to manual entry), and prescription insights fall back to the built-in medicine knowledge base, which only recognizes common drugs.
 
 **No real authentication.** The doctor dashboard and hospital bed desk have static PIN gates (client-side only, not server-enforced). Anyone who knows the PIN — or reads the source — can view the queue and write prescriptions. This is a prototype constraint, not an oversight.
 
@@ -118,8 +122,10 @@ docker compose up              # backend at :8000, frontend at :5173
 ```
 
 Optionally set `GROQ_API_KEY` and/or `OPENROUTER_API_KEY` in your shell (or a
-`.env` file next to `docker-compose.yml`) to enable LLM triage — without a
-key, triage runs in keyword demo mode.
+`.env` file next to `docker-compose.yml`) to enable LLM triage, prescription
+scanning and prescription insights — without a key, triage runs in keyword
+demo mode, prescription scanning falls back to manual entry, and insights
+come from the built-in medicine knowledge base.
 
 ### Option 2 — Run locally
 
