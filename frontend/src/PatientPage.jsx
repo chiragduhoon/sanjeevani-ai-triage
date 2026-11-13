@@ -3,6 +3,7 @@ import VoiceInput from './VoiceInput'
 import FollowUpThread from './FollowUpThread'
 import TriageResult from './TriageResult'
 import AmbulanceButton from './AmbulanceButton'
+import AirQualityWidget from './AirQualityWidget'
 import { apiUrl } from './api.js'
 import ImmediateGuidance from './ImmediateGuidance'
 import AppointmentBooking from './AppointmentBooking'
@@ -38,6 +39,8 @@ export default function PatientPage() {
   // Photos the patient optionally attaches (rash, wound, report). Each: { file, preview }.
   const [images, setImages] = useState([])
   const [imageError, setImageError] = useState('')
+  // { locality, aqi, band, dominant } — never raw coordinates. Set by AirQualityWidget.
+  const [airQuality, setAirQuality] = useState(null)
 
   const switchLang = (l) => { setUiLang(l); localStorage.setItem('sanjeevani_lang', l) }
   const isHindi = uiLang === 'hi'
@@ -207,7 +210,7 @@ export default function PatientPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript, patientId, patientName: patientName.trim(), lang: uiLang,
-          images: imageUrls,
+          images: imageUrls, air_quality: airQuality,
         }),
       })
 
@@ -463,6 +466,8 @@ export default function PatientPage() {
               </p>
             )}
           </div>
+
+          <AirQualityWidget onChange={setAirQuality} lang={uiLang} />
 
           {/* Voice input card */}
           <div style={s.card}>
@@ -784,7 +789,9 @@ export default function PatientPage() {
                   <p style={{ fontSize: 11, color: s.colors.gray[400], margin: '8px 4px 0' }}>
                     {isHindi ? 'AI द्वारा सुझाया गया · डॉक्टर की सलाह का विकल्प नहीं' : 'AI-suggested · not a substitute for a doctor'}
                   </p>
-                  {result.risk_level === 'CRITICAL' && <AmbulanceButton riskLevel={result.risk_level} />}
+                  {result.risk_level === 'CRITICAL' && (
+                    <AmbulanceButton riskLevel={result.risk_level} patientId={savedPatientId} patientName={patientName} />
+                  )}
                 </div>
               )}
 
@@ -901,6 +908,7 @@ export default function PatientPage() {
                 setSavedPatientId(null)
                 setReturnPatient(null)
                 setLookupPatientId('')
+                setAirQuality(null)
               }}
               style={{
                 width: '100%',

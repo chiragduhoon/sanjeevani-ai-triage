@@ -18,6 +18,8 @@ CRITICAL_KEYWORDS = {
     ],
     "breathing": [
         "difficulty breathing", "shortness of breath", "choking", "can't breathe",
+        "cannot breathe", "can not breathe", "unable to breathe", "not able to breathe",
+        "not breathing", "stopped breathing", "struggling to breathe", "gasping",
         # Hindi
         "सांस लेने में दिक्कत", "सांस नहीं आ रही", "सांस लेने में तकलीफ",
         # Hinglish
@@ -33,7 +35,8 @@ CRITICAL_KEYWORDS = {
         "lakwa", "muh tedha", "bolne mein dikkat",
     ],
     "unconscious": [
-        "loss of consciousness", "fainting", "passed out", "unconscious",
+        "loss of consciousness", "fainting", "fainted", "passed out", "unconscious",
+        "unresponsive", "collapsed", "not responding", "won't wake up",
         # Hindi
         "बेहोश", "होश नहीं", "चक्कर आकर गिर",
         # Hinglish
@@ -76,6 +79,8 @@ CRITICAL_KEYWORDS = {
     ],
     "throat swelling": [
         "throat closing", "throat swelling", "tongue swelling", "can't swallow",
+        "throat is closing", "throat is swelling", "tongue is swelling", "lips are swelling",
+        "face is swelling", "throat feels tight",
         # Hindi
         "गला बंद", "जीभ सूज", "निगलने में दिक्कत",
         # Hinglish
@@ -104,7 +109,7 @@ HIGH_KEYWORDS = {
         "tez bukhar", "bukhar",
     ],
     "injury": [
-        "injury", "accident", "fall",
+        "injury", "accident", "fall", "fell",
         # Hindi
         "चोट", "दुर्घटना", "गिर गया",
         # Hinglish
@@ -128,7 +133,7 @@ MODERATE_KEYWORDS = {
         "khansi", "zukam",
     ],
     "headache": [
-        "headache",
+        "headache", "dizzy", "dizziness",
         # Hindi
         "सिरदर्द", "सिर में दर्द",
         # Hinglish
@@ -173,6 +178,12 @@ HINGLISH_CARDIAC_RE = re.compile(
     r'|\b(dil|heart)\b.{0,15}\b(attak|attack|doora|daura|dawra)\b',
     re.IGNORECASE,
 )
+# English proximity pattern: "my chest hurts", "tightness in my chest", "chest feels heavy".
+ENGLISH_CARDIAC_RE = re.compile(
+    r'\bchest\b.{0,25}\b(hurts?|hurting|pain|aches?|tight|tightness|pressure|heavy|squeez\w*)\b'
+    r'|\b(pain|tightness|pressure|heaviness)\b.{0,15}\b(in|on)\b.{0,10}\bchest\b',
+    re.IGNORECASE,
+)
 # Note: a bare "nahi"/"nhi" is deliberately NOT a positive token here — on its own it is
 # usually a negator ("dikkat nahi" = no difficulty). The positive "breath not coming" sense
 # is still caught via "nahi aa" / "aa rahi" / "lene".
@@ -193,41 +204,68 @@ DEVANAGARI_BREATHING_RE = re.compile(
 
 # Words that negate a nearby symptom ("no chest pain", "seene mein dard nahi hai").
 # Kept to unambiguous negators so we don't accidentally drop real symptoms.
-NEGATORS = {
+# Direction matters: English negators come BEFORE the symptom ("no fever"), Hindi/Hinglish
+# ones come AFTER it ("bukhar nahi hai"). Checking both directions with one list made
+# "chest pain, not fever" negate the chest pain, under-triaging an emergency.
+NEGATORS_BEFORE = {
     "not", "no", "don't", "dont", "doesn't", "doesnt", "didn't", "didnt",
-    "without", "never",
-    "nahi", "nhi", "nahin", "बिना", "नहीं", "नही",
+    "without", "never", "बिना",
 }
+NEGATORS_AFTER = {"nahi", "nhi", "nahin", "नहीं", "नही"}
+NEGATORS = NEGATORS_BEFORE | NEGATORS_AFTER
+# A negation never reaches across a clause: "no fever, but chest pain" keeps the chest pain.
+_CLAUSE_BREAK_RE = re.compile(r"[,.;!?।]|\b(?:but|however|although|though|lekin|par|magar|aur)\b|लेकिन|पर|मगर")
 _WORD_RE = re.compile(r"\S+")
+_STRIP = ".,!?;:।\"'()"
 
 
 def _window_has_negator(before: str, after: str, span: int = 3) -> bool:
-    """True if a negator sits within `span` words before or after a matched symptom."""
-    before_words = _WORD_RE.findall(before.lower())[-span:]
-    after_words = _WORD_RE.findall(after.lower())[:span]
-    window = {w.strip(".,!?;:।\"'()") for w in before_words + after_words}
-    return bool(window & NEGATORS)
+    """True if the symptom is negated: an English negator within `span` words before it,
+    or a Hindi negator within `span` words after it, without crossing a clause break."""
+    before_clause = _CLAUSE_BREAK_RE.split(before.lower())[-1] if before else ""
+    after_parts = _CLAUSE_BREAK_RE.split(after.lower()) if after else [""]
+    after_clause = after_parts[0] or ""
+    before_words = {w.strip(_STRIP) for w in _WORD_RE.findall(before_clause)[-span:]}
+    after_words = {w.strip(_STRIP) for w in _WORD_RE.findall(after_clause)[:span]}
+    return bool(before_words & NEGATORS_BEFORE) or bool(after_words & NEGATORS_AFTER)
+
+
+def _keyword_pattern(keyword: str) -> re.Pattern:
+    """Latin-script keywords match whole words only (plus plural/verb endings), so "fits"
+    does not fire inside "benefits" and "ache" not inside "teacher". Devanagari keywords
+    keep substring matching because Hindi attaches postpositions and \b is unreliable there."""
+    kw = re.escape(keyword.lower())
+    if keyword.isascii():
+        return re.compile(rf"(?<![a-z]){kw}(?:s|es|ed|ing)?(?![a-z])")
+    return re.compile(kw)
+
+
+_PATTERN_CACHE: dict = {}
 
 
 def _has_unnegated(text_lower: str, keyword: str) -> bool:
     """True if `keyword` appears at least once without a nearby negator."""
-    kw = keyword.lower()
-    if not kw:
+    if not keyword:
         return False
-    start = text_lower.find(kw)
-    while start != -1:
-        end = start + len(kw)
-        if not _window_has_negator(text_lower[:start], text_lower[end:]):
+    pat = _PATTERN_CACHE.get(keyword)
+    if pat is None:
+        pat = _PATTERN_CACHE[keyword] = _keyword_pattern(keyword)
+    for m in pat.finditer(text_lower):
+        if not _window_has_negator(text_lower[:m.start()], text_lower[m.end():]):
             return True
-        start = text_lower.find(kw, start + 1)
     return False
 
 
-def _regex_unnegated(text: str, regex: re.Pattern) -> bool:
-    """True if a regex symptom pattern matches without a nearby negator."""
+def _regex_unnegated(text: str, regex: re.Pattern, check_inside: bool = False) -> bool:
+    """True if a regex symptom pattern matches without a nearby negator.
+    check_inside also rejects matches with an English negator inside them ("chest does not hurt").
+    Not used for Hinglish patterns, where "saans nahi aa rahi" (breath not coming) IS the emergency."""
     for m in regex.finditer(text):
-        if not _window_has_negator(text[:m.start()], text[m.end():]):
-            return True
+        if _window_has_negator(text[:m.start()], text[m.end():]):
+            continue
+        if check_inside and {w.strip(_STRIP) for w in _WORD_RE.findall(m.group(0).lower())} & NEGATORS_BEFORE:
+            continue
+        return True
     return False
 
 
@@ -289,11 +327,26 @@ def _default_care_advice(risk: str, lang: str) -> list:
     return lang_map.get(risk, lang_map["LOW"])
 
 
-def demo_triage(transcript: str, care_lang: str = None) -> dict:
+_AQI_NOTE = {
+    "en": "Local air quality is currently {band} (AQI {aqi}) — avoid outdoor exertion and consider a mask if you go out.",
+    "hi": "आपके इलाके की हवा फिलहाल {band} है (AQI {aqi}) — बाहर मेहनत वाला काम न करें और बाहर जाते समय मास्क पहनें।",
+}
+
+
+def _aqi_note(air_quality: dict, care_lang: str) -> str:
+    lang_map = _AQI_NOTE.get(care_lang, _AQI_NOTE["en"])
+    return lang_map.format(band=air_quality.get("band", ""), aqi=air_quality.get("aqi", ""))
+
+
+def demo_triage(transcript: str, care_lang: str = None, air_quality: dict = None) -> dict:
     """Hardcoded triage logic for demo/testing without API keys. Supports Hindi/Hinglish.
     care_lang ('hi'|'en') sets the care_advice language; defaults to the detected language."""
     text_lower = transcript.lower()
     care_lang = care_lang if care_lang in ("hi", "en") else detect_language(transcript)
+    respiratory_or_cardiac = any(
+        kw in text_lower for kw in ("cough", "breath", "khansi", "saans", "chest", "seene", "heart", "dil")
+    ) or ("खांसी" in transcript or "सांस" in transcript or "सीने" in transcript or "दिल" in transcript)
+    aqi_is_bad = air_quality and isinstance(air_quality.get("aqi"), (int, float)) and air_quality["aqi"] > 200
 
     # Check for CRITICAL keywords (negation-aware substring match)
     emergency_flags = []
@@ -305,7 +358,8 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
     # spelling variants and words inserted between the body part and the symptom.
     flags_lower = [f.lower() for f in emergency_flags]
     if "chest pain" not in flags_lower and (
-        _regex_unnegated(transcript, HINGLISH_CARDIAC_RE)
+        _regex_unnegated(transcript, ENGLISH_CARDIAC_RE, check_inside=True)
+        or _regex_unnegated(transcript, HINGLISH_CARDIAC_RE)
         or _regex_unnegated(transcript, DEVANAGARI_CARDIAC_RE)
     ):
         emergency_flags.append("CHEST PAIN")
@@ -316,6 +370,9 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
         emergency_flags.append("BREATHING")
 
     if emergency_flags:
+        care = _default_care_advice("CRITICAL", care_lang)
+        if respiratory_or_cardiac and aqi_is_bad:
+            care = care + [_aqi_note(air_quality, care_lang)]
         return {
             "symptoms": emergency_flags,
             "risk_level": "CRITICAL",
@@ -323,7 +380,7 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
             "emergency_flags": emergency_flags,
             "recommended_action": "Call 108 immediately. Do not move the patient.",
             "medical_summary": f"CRITICAL: Patient reports {', '.join(emergency_flags).lower()}. Requires immediate emergency intervention.",
-            "care_advice": _default_care_advice("CRITICAL", care_lang),
+            "care_advice": care,
             "detectedLanguage": detect_language(transcript),
         }
 
@@ -334,6 +391,9 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
             symptoms.append(category)
 
     if symptoms:
+        care = _default_care_advice("HIGH", care_lang)
+        if respiratory_or_cardiac and aqi_is_bad:
+            care = care + [_aqi_note(air_quality, care_lang)]
         return {
             "symptoms": symptoms,
             "risk_level": "HIGH",
@@ -341,7 +401,7 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
             "emergency_flags": [],
             "recommended_action": "Seek urgent medical attention within 24 hours.",
             "medical_summary": f"HIGH: Patient presents with {', '.join(symptoms).lower()}. Requires prompt medical evaluation.",
-            "care_advice": _default_care_advice("HIGH", care_lang),
+            "care_advice": care,
             "detectedLanguage": detect_language(transcript),
         }
 
@@ -352,6 +412,9 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
             symptoms.append(category)
 
     if symptoms:
+        care = _default_care_advice("MODERATE", care_lang)
+        if respiratory_or_cardiac and aqi_is_bad:
+            care = care + [_aqi_note(air_quality, care_lang)]
         return {
             "symptoms": symptoms or ["general malaise"],
             "risk_level": "MODERATE",
@@ -359,7 +422,7 @@ def demo_triage(transcript: str, care_lang: str = None) -> dict:
             "emergency_flags": [],
             "recommended_action": "Follow up with primary care physician.",
             "medical_summary": f"MODERATE: Patient reports {', '.join(symptoms).lower() if symptoms else 'general symptoms'}. Recommend primary care evaluation.",
-            "care_advice": _default_care_advice("MODERATE", care_lang),
+            "care_advice": care,
             "detectedLanguage": detect_language(transcript),
         }
 
@@ -381,7 +444,7 @@ TRIAGE_PROMPT = """You are a medical triage AI. Analyze this patient description
 IMPORTANT: The patient may have described symptoms in Hindi, Hinglish, or English. You MUST always respond in English only. Translate all symptom names, summaries, and actions to English.
 
 Patient describes: "{transcript}"
-
+{air_quality_context}
 Return this exact JSON structure:
 {{
   "symptoms": ["symptom1", "symptom2", "symptom3"],
@@ -457,10 +520,10 @@ def _validate_llm_result(raw: dict, transcript: str, detected_lang: str, care_la
     }
 
 
-def _apply_safety_net(result: dict, transcript: str) -> dict:
+def _apply_safety_net(result: dict, transcript: str, air_quality: dict = None) -> dict:
     """Never under-triage a red flag: if keywords detect an emergency the LLM missed,
     escalate to CRITICAL and merge the flags. One-directional — never downgrades."""
-    demo = demo_triage(transcript)
+    demo = demo_triage(transcript, air_quality=air_quality)
     if demo.get("is_emergency") and not result.get("is_emergency"):
         result["risk_level"] = "CRITICAL"
         result["is_emergency"] = True
@@ -559,15 +622,31 @@ def _care_lang_instruction(care_lang: str) -> str:
     return f"\n\nWrite the care_advice steps in {name}."
 
 
-async def analyze_transcript(transcript: str, pref_lang: str = None) -> dict:
+def _air_quality_context(air_quality: dict) -> str:
+    if not air_quality or not isinstance(air_quality.get("aqi"), (int, float)):
+        return ""
+    return (
+        f'\nLocal air quality context: AQI {air_quality["aqi"]} ({air_quality.get("band", "")}) '
+        f'in {air_quality.get("locality", "the patient\'s area")}. If the patient\'s symptoms are '
+        f"respiratory or cardiac, factor this into risk_level and care_advice; otherwise ignore it.\n"
+    )
+
+
+async def analyze_transcript(transcript: str, pref_lang: str = None, air_quality: dict = None) -> dict:
     """Analyze a transcript with an LLM. Prefers Groq, then OpenRouter, then a
     keyword-based demo fallback. Always returns a valid triage dict.
 
     pref_lang ('hi'|'en') is the patient's chosen UI language and controls the
-    language of the care_advice steps. If not given, the detected language is used."""
+    language of the care_advice steps. If not given, the detected language is used.
+
+    air_quality, if given, is a sanitized {locality, aqi, band, dominant} dict
+    (never raw coordinates) used to make respiratory/cardiac advice AQI-aware."""
     detected_lang = detect_language(transcript)
     care_lang = pref_lang if pref_lang in ("hi", "en") else detected_lang
-    prompt = TRIAGE_PROMPT.format(transcript=transcript) + _care_lang_instruction(care_lang)
+    prompt = TRIAGE_PROMPT.format(
+        transcript=transcript,
+        air_quality_context=_air_quality_context(air_quality),
+    ) + _care_lang_instruction(care_lang)
 
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     groq_key = os.getenv("GROQ_API_KEY")
@@ -587,7 +666,7 @@ async def analyze_transcript(transcript: str, pref_lang: str = None) -> dict:
             if result is None:
                 print(f"{name} returned an invalid result. Trying next option.")
                 continue
-            return _apply_safety_net(result, transcript)
+            return _apply_safety_net(result, transcript, air_quality)
         except Exception as e:
             print(f"{name} API error: {e}. Trying next option.")
 
@@ -595,4 +674,4 @@ async def analyze_transcript(transcript: str, pref_lang: str = None) -> dict:
         print("[demo] No LLM API key set. Using DEMO MODE (hardcoded keywords).")
     else:
         print("[demo] All LLM providers failed. Using DEMO MODE (hardcoded keywords).")
-    return demo_triage(transcript, care_lang)
+    return demo_triage(transcript, care_lang, air_quality)

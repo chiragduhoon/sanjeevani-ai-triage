@@ -1,10 +1,34 @@
 import React, { useState, useEffect } from 'react'
 import { RISK_COLORS } from './styles'
+import { sendLiveLocation } from './realtime'
 
-export default function AmbulanceButton({ riskLevel }) {
+export default function AmbulanceButton({ riskLevel, patientId, patientName }) {
   const [status, setStatus] = useState('Idle')
   const [estimatedTime, setEstimatedTime] = useState(null)
   const [requested, setRequested] = useState(false)
+  // 'idle' | 'sharing' | 'shared' | 'error'. Never written to disk — sent live
+  // over the doctor WebSocket for this one dispatch and nothing else.
+  const [locationStatus, setLocationStatus] = useState('idle')
+
+  const shareLiveLocation = () => {
+    if (!navigator.geolocation) { setLocationStatus('error'); return }
+    setLocationStatus('sharing')
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await sendLiveLocation({
+            patientId, patientName,
+            lat: pos.coords.latitude, lon: pos.coords.longitude,
+          })
+          setLocationStatus('shared')
+        } catch {
+          setLocationStatus('error')
+        }
+      },
+      () => setLocationStatus('error'),
+      { timeout: 10000 }
+    )
+  }
 
   const handleCallAmbulance = () => {
     setRequested(true)
@@ -102,6 +126,41 @@ export default function AmbulanceButton({ riskLevel }) {
       <p style={{ fontSize: 11, color: '#6B7280', margin: '8px 0 0', textAlign: 'center' }}>
         India: 108 (Ambulance) · 112 (National Emergency) · 102 (Govt. Ambulance)
       </p>
+
+      {/* Precise location is opt-in, only offered for a CRITICAL case, sent live
+          over the socket, and never written to any file — see PatientPage/AmbulanceButton. */}
+      <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: '#F9FAFB', border: '1px solid #E5E7EB' }}>
+        {locationStatus === 'idle' && (
+          <>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 8px' }}>
+              Share your exact location with the doctor for faster dispatch? It's sent live and not saved anywhere.
+            </p>
+            <button
+              onClick={shareLiveLocation}
+              style={{
+                padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB',
+                background: 'white', color: '#374151', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              📍 Share exact location
+            </button>
+          </>
+        )}
+        {locationStatus === 'sharing' && (
+          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>Sharing location…</p>
+        )}
+        {locationStatus === 'shared' && (
+          <p style={{ fontSize: 12, color: '#059669', margin: 0, fontWeight: 600 }}>✓ Location shared with the doctor</p>
+        )}
+        {locationStatus === 'error' && (
+          <>
+            <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 8px' }}>Couldn't share location.</p>
+            <button onClick={shareLiveLocation} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: 'white', fontSize: 12, cursor: 'pointer' }}>
+              Retry
+            </button>
+          </>
+        )}
+      </div>
 
       {requested && (
         <div style={{

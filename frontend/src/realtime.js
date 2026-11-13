@@ -4,6 +4,23 @@ export function getWsUrl(path) {
   return wsUrl(path)
 }
 
+// Sends a single live-location ping over a short-lived socket for an active
+// emergency case. Never persisted anywhere — the backend only broadcasts it to
+// connected doctor tabs, it is not written to any file or patient record.
+export function sendLiveLocation({ patientId, patientName, lat, lon }) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(getWsUrl('/ws/doctor'))
+    const timeout = setTimeout(() => { ws.close(); reject(new Error('timed out')) }, 8000)
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'live_location', patientId, patientName, lat, lon }))
+      clearTimeout(timeout)
+      setTimeout(() => ws.close(), 500)
+      resolve()
+    }
+    ws.onerror = () => { clearTimeout(timeout); reject(new Error('connection failed')) }
+  })
+}
+
 export function connectDoctorSocket({ onMessage, onStatus }) {
   let ws = null
   let retry = 0

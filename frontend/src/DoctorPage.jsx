@@ -32,6 +32,9 @@ export default function DoctorPage() {
   const [showCriticalAlert, setShowCriticalAlert] = useState(false)
   const [activeTab, setActiveTab] = useState('queue') // queue, bed, prescriptions, notes
   const [lastCriticalPatient, setLastCriticalPatient] = useState(null)
+  // patientId -> { lat, lon, receivedAt }. In-memory only, never persisted —
+  // live emergency-dispatch pings, not part of the patient record.
+  const [liveLocations, setLiveLocations] = useState({})
   // Shown when a backend write (discharge/clear/status) fails, so the doctor
   // isn't left assuming an action succeeded when it didn't.
   const [actionError, setActionError] = useState(null)
@@ -89,6 +92,11 @@ export default function DoctorPage() {
         setSelectedPatient(null)
       } else if (message.type === 'queue_remove') {
         setPatients((prev) => prev.filter(p => p.patientId !== message.patientId))
+      } else if (message.type === 'live_location' && message.patientId) {
+        setLiveLocations((prev) => ({
+          ...prev,
+          [message.patientId]: { lat: message.lat, lon: message.lon, receivedAt: message.receivedAt },
+        }))
       }
       },
     })
@@ -602,6 +610,7 @@ export default function DoctorPage() {
           onClose={() => setSelectedPatient(null)}
           onQuickAction={(tab) => setActiveTab(tab)}
           onDischarge={handleDischarge}
+          liveLocation={liveLocations[selectedPatient.patientId]}
         />
       )}
     </div>

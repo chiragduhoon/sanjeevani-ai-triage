@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from triage import analyze_transcript
+from air_quality import fetch_air_quality
 from prescription_extract import extract_prescription
 from prescription_insights import explain_prescriptions
 from websocket import manager
@@ -98,6 +99,30 @@ def _beds_view():
     }
 
 
+@app.get("/api/air-quality")
+async def get_air_quality(lat: float, lon: float):
+    """Current AQI for a location. Coordinates are used only to look up the
+    reading (cached in-memory, never written to disk) — this endpoint does not
+    persist location data anywhere."""
+    return await fetch_air_quality(lat, lon)
+
+
+def _sanitize_air_quality(raw):
+    """Only ever accept a locality label + AQI numbers onto a patient record —
+    never raw coordinates, regardless of what the client sends."""
+    if not isinstance(raw, dict):
+        return None
+    aqi = raw.get("aqi")
+    if not isinstance(aqi, (int, float)):
+        return None
+    return {
+        "locality": str(raw.get("locality") or "")[:120],
+        "aqi": int(aqi),
+        "band": str(raw.get("band") or "")[:30],
+        "dominant": str(raw.get("dominant") or "")[:20],
+    }
+
+
 @app.post("/triage")
 async def triage(request: dict):
     transcript = request.get("transcript", "").strip()
@@ -105,11 +130,12 @@ async def triage(request: dict):
     patient_name = request.get("patientName", "")
     images = request.get("images") or []
     lang = request.get("lang")  # patient's chosen UI language ('hi'|'en')
+    air_quality = _sanitize_air_quality(request.get("air_quality"))
 
     if not transcript:
         raise HTTPException(status_code=400, detail="Transcript is required")
 
-    result = await analyze_transcript(transcript, pref_lang=lang)
+    result = await analyze_transcript(transcript, pref_lang=lang, air_quality=air_quality)
 
     broadcast_data = {
         "type": "triage_result",
@@ -123,6 +149,8 @@ async def triage(request: dict):
     }
     if patient_id:
         broadcast_data["patientId"] = patient_id
+    if air_quality:
+        broadcast_data["air_quality"] = air_quality
 
     # Store in persistent queue
     patient_queue.append(broadcast_data)
@@ -163,6 +191,24 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
+                continue
+            # Live-location pings (emergency dispatch only) are relayed to connected
+            # doctor tabs in real time and never written to disk or any patient record.
+            try:
+                msg = json.loads(data)
+            except ValueError:
+                continue
+            if msg.get("type") == "live_location":
+                lat, lon = msg.get("lat"), msg.get("lon")
+                if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+                    await manager.broadcast_json({
+                        "type": "live_location",
+                        "patientId": msg.get("patientId"),
+                        "patientName": msg.get("patientName"),
+                        "lat": lat,
+                        "lon": lon,
+                        "receivedAt": datetime.now().isoformat(),
+                    })
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:

@@ -11,7 +11,7 @@ const STATUS_COLORS = {
   DISCHARGED: { bg: '#F3F4F6', text: '#374151', border: '#D1D5DB' },
 }
 
-export default function PatientDetailPanel({ patient, onClose, onQuickAction, onDischarge }) {
+export default function PatientDetailPanel({ patient, onClose, onQuickAction, onDischarge, liveLocation }) {
   const [prescriptions, setPrescriptions] = useState([])
   const [followups, setFollowups] = useState([])
   const [status, setStatus] = useState(patient?.queueStatus || 'WAITING')
@@ -136,6 +136,38 @@ export default function PatientDetailPanel({ patient, onClose, onQuickAction, on
               </code>
             )}
           </div>
+
+          {/* Local air quality at time of triage submission (locality name only, no coordinates) */}
+          {patient.air_quality && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8,
+              padding: '4px 10px', borderRadius: 6, background: '#F3F4F6', fontSize: 11.5, color: '#4B5563',
+            }}>
+              🌫️ AQI {patient.air_quality.aqi} ({patient.air_quality.band})
+              {patient.air_quality.locality && <span> · {patient.air_quality.locality}</span>}
+            </div>
+          )}
+
+          {/* Live precise location — sent only for an active emergency dispatch,
+              never persisted to disk. Disappears once the doctor navigates away
+              since it only lives in DoctorPage's in-memory state. */}
+          {liveLocation && (
+            <div style={{
+              marginBottom: 8, padding: 10, borderRadius: 8,
+              background: '#FEF2F2', border: '1px solid #FCA5A5',
+            }}>
+              <p style={{ fontSize: 11.5, fontWeight: 700, color: '#991B1B', margin: '0 0 6px' }}>
+                📍 Live location shared (dispatch)
+              </p>
+              <a
+                href={`https://www.google.com/maps?q=${liveLocation.lat},${liveLocation.lon}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 12, color: '#DC2626', fontWeight: 600 }}
+              >
+                Open in Google Maps →
+              </a>
+            </div>
+          )}
 
           {/* Queue Status Selector */}
           <div style={{ marginTop: 8 }}>
