@@ -1,5 +1,7 @@
 # Sanjeevani — AI Healthcare Triage
 
+![CI](../../actions/workflows/ci.yml/badge.svg)
+
 Emergency departments in India routinely triage patients at the front desk using verbal intake with no structured risk scoring. The result is that critical patients can wait behind lower-priority cases, and doctors receive no alert until the patient reaches them. Sanjeevani is a prototype that replaces that verbal intake step with a structured AI triage loop: patients describe symptoms by voice or text, the system classifies risk, queues the patient, and pushes real-time alerts to a doctor dashboard — with critical cases surfaced to the top.
 
 Beyond triage, patients can photograph a paper prescription and have a vision LLM extract the medicines into structured records — and for any saved or previous prescription, ask the AI what illness it was likely treating and what each medicine helped with, explained in plain Hindi or English.
@@ -73,6 +75,28 @@ Doctor Dashboard (browser)
 
 ---
 
+## Red-flag safety net (tested)
+
+The LLM is never the only line of defence. Every LLM triage result passes through a deterministic keyword and pattern detector (`backend/triage.py`). If the detector finds an emergency the LLM missed, the case is escalated to CRITICAL. It can never downgrade. The same detector is the full triage engine when no API key is configured.
+
+It works in English, Hindi (Devanagari) and Hinglish, and handles negation the way each language does: "**no** fever" (English negates the word after), "bukhar **nahi** hai" (Hindi negates the word before). Negation never crosses a clause, so "no fever, **but** chest pain" stays CRITICAL.
+
+A labelled suite of 46 patient sentences (`backend/tests/triage_cases.py`) runs in CI:
+
+| | Before the fix | Now |
+|---|---|---|
+| Emergencies detected (CRITICAL recall) | 19/26 (73%) | **26/26 (100%)** |
+| False emergency alarms | 1 | **0** |
+| All risk levels correct | 33/46 | **46/46** |
+
+Bugs this caught: "I have chest pain, **not fever**" was triaged LOW (the "not" meant for fever cancelled the chest pain); "my father fell down and is **not breathing**" and "I am **not able to breathe**" were LOW; "vitamins for their bene**fits**" raised a seizure alert. Each is now a regression test. The sentences were written while hunting these bugs, so this is a regression suite, not an independent clinical benchmark.
+
+```bash
+cd backend && pip install pytest && pytest -q    # 55 tests, no API key needed
+```
+
+---
+
 ## Technical Decisions
 
 ### WebSocket queue replay on connect
@@ -106,6 +130,8 @@ The tradeoff is scale: replaying the full queue on every connect is O(n) in queu
 ---
 
 ## Known Limitations
+
+**Not a medical device.** Sanjeevani is a student prototype. It has not been clinically validated and must not be used to make real triage decisions.
 
 **Patient history is localStorage-only.** The patient ID is generated and stored in the browser. There is no server-side patient record lookup. Clearing browser storage loses history.
 
