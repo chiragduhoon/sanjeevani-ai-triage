@@ -3,3 +3,6 @@ node_modules/
 venv/
 __pycache__/
 dist/
+# runtime uploads (patient files) never belong in git
+backend/data/uploads/
+.pytest_cache/
